@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0d12" />
+  <meta name="theme-color" content="#06070a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -16,30 +16,29 @@
 </head>
 <body>
   <header class="app-header">
+    <span class="app-header-logo">◈</span>
     <h1>Dividend Tracker</h1>
   </header>
 
   <main>
-    <section class="summary-grid" id="summary-grid" aria-live="polite">
-      <div class="card">
-        <span class="card-label">סה"כ הושקע</span>
-        <span class="card-value" id="s-invested">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">שווי נוכחי</span>
-        <span class="card-value" id="s-current">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">רווח/הפסד</span>
-        <span class="card-value" id="s-gain">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">תשואת דיבידנד שנתית</span>
-        <span class="card-value" id="s-yield">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">הכנסה חודשית ממוצעת</span>
-        <span class="card-value" id="s-monthly">–</span>
+    <section class="hero-summary" aria-live="polite">
+      <span class="hero-label">שווי תיק כולל</span>
+      <span class="hero-value" id="s-current">–</span>
+      <span class="hero-gain" id="s-gain">–</span>
+
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <span class="hero-stat-label">הושקע</span>
+          <span class="hero-stat-value" id="s-invested">–</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-label">תשואת דיב' שנתית</span>
+          <span class="hero-stat-value" id="s-yield">–</span>
+        </div>
+        <div class="hero-stat">
+          <span class="hero-stat-label">הכנסה חודשית</span>
+          <span class="hero-stat-value" id="s-monthly">–</span>
+        </div>
       </div>
     </section>
 
@@ -48,39 +47,37 @@
         <h2>מניות בתיק</h2>
         <button type="button" id="sync-dividends-btn">רענן דיבידנדים</button>
       </div>
-      <p class="hint">לחיצה על שורת מניה מציגה את היסטוריית הדיבידנד שלה. דיבידנדים נשלפים אוטומטית בכל הוספה/עדכון.</p>
+      <p class="hint">לחיצה על מניה מציגה פרטים והיסטוריית דיבידנד. דיבידנדים נשלפים אוטומטית בכל הוספה/עדכון.</p>
       <p id="sync-status" class="hint"></p>
 
-      <div class="table-wrap">
-        <table id="holdings-table">
-          <thead>
-            <tr>
-              <th>מניה</th>
-              <th>מניות</th>
-              <th>מחיר נוכחי</th>
-              <th>שווי</th>
-              <th>רווח</th>
-              <th>תשואת דיב'</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="holdings-body"></tbody>
-        </table>
-      </div>
+      <div class="holdings-list" id="holdings-body"></div>
 
-      <form id="holding-form" class="inline-form">
+      <form id="holding-form" class="stock-form">
         <input type="hidden" name="id" id="holding-edit-id" />
         <input type="hidden" name="market" id="holding-market-input" value="US" />
 
-        <div class="ticker-search-wrap">
+        <div class="field ticker-search-wrap">
+          <label for="holding-ticker-input">מניה</label>
           <input name="ticker" id="holding-ticker-input" placeholder="טיקר או שם מניה (למשל AAPL או טבע)" required maxlength="40" autocomplete="off" />
           <ul id="ticker-suggestions" class="ticker-suggestions hidden"></ul>
           <p id="ticker-resolved" class="hint hidden"></p>
         </div>
 
-        <input name="shares" type="number" step="any" min="0" placeholder="כמות מניות" required />
-        <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="מחיר למניה בקנייה ($)" required />
-        <input name="purchase_date" type="date" id="purchase-date-input" />
+        <div class="field-row">
+          <div class="field">
+            <label for="holding-shares-input">כמות מניות</label>
+            <input name="shares" id="holding-shares-input" type="number" step="any" min="0" placeholder="0" required />
+          </div>
+          <div class="field">
+            <label for="holding-price-input">מחיר קנייה למניה</label>
+            <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="purchase-date-input">תאריך קנייה</label>
+          <input name="purchase_date" type="date" id="purchase-date-input" />
+        </div>
         <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
 
         <div id="date-helper" class="date-helper hidden">

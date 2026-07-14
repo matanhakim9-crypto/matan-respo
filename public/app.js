@@ -11,6 +11,14 @@ const fmtPct = (n) => `${(n ?? 0).toFixed(2)}%`;
 const fmtDate = (d) => new Date(d).toLocaleDateString('he-IL');
 const currencyForTicker = (ticker) => (ticker.endsWith('.TA') ? 'ILA' : 'USD');
 
+const AVATAR_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
+function avatarColor(ticker) {
+  let hash = 0;
+  for (let i = 0; i < ticker.length; i++) hash = (hash * 31 + ticker.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+const avatarInitials = (ticker) => ticker.replace('.TA', '').slice(0, 2).toUpperCase();
+
 async function api(path, options) {
   const res = await fetch(path, {
     ...options,
@@ -33,10 +41,11 @@ async function loadSummary() {
   document.getElementById('s-current').textContent = fmtMoney(s.currentValue);
 
   const gainEl = document.getElementById('s-gain');
-  const gainSign = s.gainLossPct >= 0 ? '+' : '';
-  gainEl.textContent = `${fmtMoney(s.gainLoss)} (${gainSign}${(s.gainLossPct ?? 0).toFixed(1)}%)`;
-  gainEl.classList.toggle('positive', s.gainLoss >= 0);
-  gainEl.classList.toggle('negative', s.gainLoss < 0);
+  const isUp = s.gainLoss >= 0;
+  const gainSign = isUp ? '+' : '';
+  gainEl.textContent = `${isUp ? '▲' : '▼'} ${fmtMoney(s.gainLoss)} (${gainSign}${(s.gainLossPct ?? 0).toFixed(1)}%)`;
+  gainEl.classList.toggle('positive', isUp);
+  gainEl.classList.toggle('negative', !isUp);
 
   document.getElementById('s-yield').textContent = fmtPct(s.annualYieldPct);
   document.getElementById('s-monthly').textContent = fmtMoney(s.monthlyAvgIncome);
@@ -49,7 +58,7 @@ function renderHoldings(holdings) {
   const body = document.getElementById('holdings-body');
   body.innerHTML = '';
   if (holdings.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">עדיין אין מניות בתיק</td></tr>';
+    body.innerHTML = '<p class="empty">עדיין אין מניות בתיק</p>';
     return;
   }
   for (const h of holdings) {
@@ -62,36 +71,32 @@ function renderHoldings(holdings) {
     // live price/value columns read easier in Shekels for Israeli stocks.
     const isIL = currency === 'ILA';
     const displayCurrency = isIL ? 'ILS' : currency;
-    const displayPrice = isIL && h.currentPrice != null ? h.currentPrice / 100 : h.currentPrice;
     const displayValue = isIL ? h.currentValue / 100 : h.currentValue;
 
-    const tr = document.createElement('tr');
-    tr.className = 'holding-row';
-    tr.dataset.holdingId = h.id;
-    tr.innerHTML = `
-      <td class="td-ticker">
-        <span class="expand-arrow">▸</span> ${h.ticker}
-        <span class="market-flag" title="${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span>
-      </td>
-      <td data-label="מניות">${h.shares}</td>
-      <td data-label="מחיר נוכחי">${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
-      <td data-label="שווי">${fmtMoney(displayValue, displayCurrency)}</td>
-      <td data-label="רווח" class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
-      <td data-label="תשואת דיב'">${yieldPct.toFixed(1)}%</td>
-      <td class="td-actions">
-        <button class="edit-btn" data-id="${h.id}">ערוך</button>
-        <button class="delete-btn" data-id="${h.id}">מחק</button>
-      </td>
+    const row = document.createElement('div');
+    row.className = 'holding-row';
+    row.dataset.holdingId = h.id;
+    row.innerHTML = `
+      <div class="holding-avatar" style="background:${avatarColor(h.ticker)}">${avatarInitials(h.ticker)}</div>
+      <div class="holding-id-block">
+        <div class="holding-ticker">${h.ticker.replace('.TA', '')} <span class="market-flag">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span></div>
+        <div class="holding-sub">${h.shares} מניות · תשואת דיב' ${yieldPct.toFixed(1)}%</div>
+      </div>
+      <div class="holding-value-block">
+        <div class="holding-value">${fmtMoney(displayValue, displayCurrency)}</div>
+        <div class="holding-gain ${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</div>
+      </div>
+      <span class="expand-arrow">›</span>
     `;
-    body.appendChild(tr);
+    body.appendChild(row);
     if (String(h.id) === String(expandedHoldingId)) {
-      body.appendChild(buildDividendDetailRow(h));
-      tr.classList.add('expanded');
+      body.appendChild(buildHoldingDetail(h));
+      row.classList.add('expanded');
     }
   }
 }
 
-function buildDividendDetailRow(holding) {
+function buildHoldingDetail(holding) {
   const currency = currencyForTicker(holding.ticker);
   const isIL = currency === 'ILA';
   const displayCurrency = isIL ? 'ILS' : currency;
@@ -100,10 +105,15 @@ function buildDividendDetailRow(holding) {
     .filter((p) => p.ticker === holding.ticker && (!holding.purchase_date || p.payment_date >= holding.purchase_date))
     .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
 
-  const tr = document.createElement('tr');
-  tr.className = 'dividend-detail-row';
-  const td = document.createElement('td');
-  td.colSpan = 7;
+  const wrap = document.createElement('div');
+  wrap.className = 'holding-detail';
+
+  const actions = `
+    <div class="holding-detail-actions">
+      <button class="edit-btn" data-id="${holding.id}">✎ ערוך</button>
+      <button class="delete-btn" data-id="${holding.id}">🗑 מחק</button>
+    </div>
+  `;
 
   const purchaseInfo = `
     <div class="purchase-info">
@@ -151,9 +161,8 @@ function buildDividendDetailRow(holding) {
     `;
   }
 
-  td.innerHTML = purchaseInfo + dividendSection;
-  tr.appendChild(td);
-  return tr;
+  wrap.innerHTML = actions + purchaseInfo + dividendSection;
+  return wrap;
 }
 
 async function loadDividends() {
@@ -179,7 +188,7 @@ function clearError(elementId) {
 
 document.addEventListener('click', (e) => {
   if (e.target.closest('.edit-btn') || e.target.closest('.delete-btn')) return;
-  const row = e.target.closest('tr.holding-row');
+  const row = e.target.closest('.holding-row');
   if (!row) return;
   const id = row.dataset.holdingId;
   expandedHoldingId = expandedHoldingId === id ? null : id;
