@@ -55,8 +55,7 @@
         <table id="holdings-table">
           <thead>
             <tr>
-              <th>טיקר</th>
-              <th>שוק</th>
+              <th>מניה</th>
               <th>מניות</th>
               <th>מחיר נוכחי</th>
               <th>שווי</th>
@@ -71,11 +70,14 @@
 
       <form id="holding-form" class="inline-form">
         <input type="hidden" name="id" id="holding-edit-id" />
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
-        <select name="market" id="holding-market-select">
-          <option value="US">ארה"ב</option>
-          <option value="IL">ישראל (ת"א)</option>
-        </select>
+        <input type="hidden" name="market" id="holding-market-input" value="US" />
+
+        <div class="ticker-search-wrap">
+          <input name="ticker" id="holding-ticker-input" placeholder="טיקר או שם מניה (למשל AAPL או טבע)" required maxlength="40" autocomplete="off" />
+          <ul id="ticker-suggestions" class="ticker-suggestions hidden"></ul>
+          <p id="ticker-resolved" class="hint hidden"></p>
+        </div>
+
         <input name="shares" type="number" step="any" min="0" placeholder="כמות מניות" required />
         <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="מחיר למניה בקנייה ($)" required />
         <input name="purchase_date" type="date" id="purchase-date-input" />

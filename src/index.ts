@@ -69,6 +69,27 @@ async function fetchYahooChart(ticker: string, timeframe: ChartTimeframe, events
   }
 }
 
+type TickerSuggestion = { symbol: string; name: string; market: Market };
+
+async function searchTickers(query: string): Promise<TickerSuggestion[]> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`;
+    const res = await fetch(url, { headers: YAHOO_HEADERS });
+    if (!res.ok) return [];
+    const data = await res.json<any>();
+    const quotes: any[] = data?.quotes ?? [];
+    return quotes
+      .filter((q) => q.symbol && (q.quoteType === 'EQUITY' || q.quoteType === 'ETF'))
+      .map((q) => ({
+        symbol: q.symbol as string,
+        name: (q.shortname || q.longname || q.symbol) as string,
+        market: (q.symbol as string).endsWith('.TA') || q.exchange === 'TLV' ? 'IL' : 'US',
+      }));
+  } catch {
+    return [];
+  }
+}
+
 async function getQuote(env: Bindings, ticker: string): Promise<number | null> {
   const cached = await env.DB.prepare(
     'SELECT price, updated_at FROM quote_cache WHERE ticker = ?'
@@ -277,6 +298,15 @@ app.post('/api/dividends/sync-all', async (c) => {
     await syncDividendsForHolding(c.env, h.ticker, h.shares).catch(() => {});
   }
   return c.json({ ok: true, synced: holdings.length });
+});
+
+// ---------- Ticker/name search (also resolves the market automatically) ----------
+
+app.get('/api/search-ticker', async (c) => {
+  const q = c.req.query('q')?.trim() ?? '';
+  if (q.length < 2) return c.json({ results: [] });
+  const results = await searchTickers(q);
+  return c.json({ results });
 });
 
 // ---------- Live quote ----------

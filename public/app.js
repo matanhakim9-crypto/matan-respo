@@ -49,7 +49,7 @@ function renderHoldings(holdings) {
   const body = document.getElementById('holdings-body');
   body.innerHTML = '';
   if (holdings.length === 0) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">עדיין אין מניות בתיק</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">עדיין אין מניות בתיק</td></tr>';
     return;
   }
   for (const h of holdings) {
@@ -69,8 +69,10 @@ function renderHoldings(holdings) {
     tr.className = 'holding-row';
     tr.dataset.holdingId = h.id;
     tr.innerHTML = `
-      <td><span class="expand-arrow">▸</span> ${h.ticker}</td>
-      <td><span class="market-badge market-${h.market}">${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}</span></td>
+      <td>
+        <span class="expand-arrow">▸</span> ${h.ticker}
+        <span class="market-flag" title="${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span>
+      </td>
       <td>${h.shares}</td>
       <td>${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
       <td>${fmtMoney(displayValue, displayCurrency)}</td>
@@ -101,7 +103,7 @@ function buildDividendDetailRow(holding) {
   const tr = document.createElement('tr');
   tr.className = 'dividend-detail-row';
   const td = document.createElement('td');
-  td.colSpan = 8;
+  td.colSpan = 7;
 
   if (payments.length === 0) {
     td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
@@ -172,22 +174,92 @@ const holdingEditIdInput = document.getElementById('holding-edit-id');
 const holdingSubmitBtn = document.getElementById('holding-submit-btn');
 const holdingCancelEditBtn = document.getElementById('holding-cancel-edit');
 const dateHelper = document.getElementById('date-helper');
+const tickerInput = document.getElementById('holding-ticker-input');
+const marketInput = document.getElementById('holding-market-input');
+const suggestionsList = document.getElementById('ticker-suggestions');
+const resolvedText = document.getElementById('ticker-resolved');
+
+const hasHebrew = (text) => /[֐-׿]/.test(text);
 
 // TASE stocks are priced and entered in Agorot (אג'), not Shekels — keep the
 // placeholder honest about which unit is expected so amounts don't get
 // entered 100x off.
 function updateHoldingPriceUnit() {
-  const isIL = document.getElementById('holding-market-select').value === 'IL';
-  document.getElementById('holding-price-input').placeholder = isIL
+  document.getElementById('holding-price-input').placeholder = marketInput.value === 'IL'
     ? 'מחיר למניה בקנייה (אגורות)'
     : 'מחיר למניה בקנייה ($)';
 }
-document.getElementById('holding-market-select').addEventListener('change', updateHoldingPriceUnit);
 updateHoldingPriceUnit();
+
+// ---- Ticker/name search: auto-detects the market, no manual US/IL picker ----
+
+let searchDebounce = null;
+let resolvedViaSearch = false;
+
+function hideSuggestions() {
+  suggestionsList.classList.add('hidden');
+  suggestionsList.innerHTML = '';
+}
+
+function renderSuggestions(results) {
+  if (results.length === 0) {
+    suggestionsList.innerHTML = '<li class="suggestion-empty">לא נמצאו תוצאות — נסה טיקר מדויק או שם באנגלית</li>';
+    suggestionsList.classList.remove('hidden');
+    return;
+  }
+  suggestionsList.innerHTML = results.map((r) => `
+    <li data-symbol="${r.symbol}" data-market="${r.market}" data-name="${r.name.replace(/"/g, '&quot;')}">
+      <span class="suggestion-symbol">${r.symbol}</span>
+      <span class="suggestion-name">${r.name}</span>
+      <span class="market-flag">${r.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span>
+    </li>
+  `).join('');
+  suggestionsList.classList.remove('hidden');
+}
+
+tickerInput.addEventListener('input', () => {
+  resolvedViaSearch = false;
+  resolvedText.classList.add('hidden');
+  const query = tickerInput.value.trim();
+  clearTimeout(searchDebounce);
+  if (query.length < 2) {
+    hideSuggestions();
+    return;
+  }
+  searchDebounce = setTimeout(async () => {
+    try {
+      const { results } = await api(`/api/search-ticker?q=${encodeURIComponent(query)}`);
+      renderSuggestions(results ?? []);
+    } catch {
+      hideSuggestions();
+    }
+  }, 300);
+});
+
+suggestionsList.addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-symbol]');
+  if (!li) return;
+  const { symbol, market, name } = li.dataset;
+  tickerInput.value = symbol;
+  marketInput.value = market;
+  resolvedViaSearch = true;
+  updateHoldingPriceUnit();
+  resolvedText.textContent = `נבחר: ${name} (${market === 'IL' ? 'ת"א' : 'ארה"ב'})`;
+  resolvedText.classList.remove('hidden');
+  hideSuggestions();
+});
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.ticker-search-wrap')) hideSuggestions();
+});
 
 function exitEditMode() {
   holdingForm.reset();
   holdingEditIdInput.value = '';
+  marketInput.value = 'US';
+  resolvedViaSearch = false;
+  resolvedText.classList.add('hidden');
+  updateHoldingPriceUnit();
   holdingSubmitBtn.textContent = 'הוסף מניה';
   holdingCancelEditBtn.classList.add('hidden');
   dateHelper.classList.add('hidden');
@@ -199,6 +271,13 @@ holdingForm.addEventListener('submit', async (e) => {
   const form = e.target;
   const data = Object.fromEntries(new FormData(form).entries());
   const editId = data.id;
+
+  // A Hebrew company name without picking a suggestion can't be turned into
+  // a real ticker symbol — block instead of silently saving a dead entry.
+  if (!resolvedViaSearch && hasHebrew(data.ticker)) {
+    showError('holding-error', new Error('בחר מניה מהרשימה שמופיעה תחת החיפוש כדי שנזהה את הטיקר הנכון'));
+    return;
+  }
 
   const payload = {
     ticker: data.ticker,
@@ -233,13 +312,12 @@ document.addEventListener('click', (e) => {
   if (!holding) return;
 
   clearError('holding-error');
-  const displayTicker = holding.market === 'IL' && holding.ticker.endsWith('.TA')
-    ? holding.ticker.slice(0, -3)
-    : holding.ticker;
-
   holdingEditIdInput.value = holding.id;
-  holdingForm.ticker.value = displayTicker;
-  holdingForm.market.value = holding.market;
+  tickerInput.value = holding.ticker;
+  marketInput.value = holding.market;
+  resolvedViaSearch = true;
+  updateHoldingPriceUnit();
+  resolvedText.classList.add('hidden');
   holdingForm.shares.value = holding.shares;
   holdingForm.purchase_price.value = holding.purchase_price;
   holdingForm.purchase_date.value = holding.purchase_date ?? '';
