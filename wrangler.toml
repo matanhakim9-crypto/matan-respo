@@ -1,0 +1,11 @@
+name = "dividend-tracker"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+[assets]
+directory = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dividend-tracker-db"
+database_id = "2f94022f-759f-4192-9d43-85c3e0f8b925"
