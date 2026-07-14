@@ -1,9 +1,15 @@
-const fmtMoney = (n, currency = 'ILS') =>
-  new Intl.NumberFormat('he-IL', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n ?? 0);
+// 'ILA' (Agorot) isn't a real ISO currency code Intl recognizes, since TASE
+// stocks are natively priced and entered in Agorot rather than Shekels.
+const fmtMoney = (n, currency = 'ILS') => {
+  if (currency === 'ILA') {
+    return `${new Intl.NumberFormat('he-IL', { maximumFractionDigits: 2 }).format(n ?? 0)} אג'`;
+  }
+  return new Intl.NumberFormat('he-IL', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n ?? 0);
+};
 
 const fmtPct = (n) => `${(n ?? 0).toFixed(2)}%`;
 const fmtDate = (d) => new Date(d).toLocaleDateString('he-IL');
-const currencyForTicker = (ticker) => (ticker.endsWith('.TA') ? 'ILS' : 'USD');
+const currencyForTicker = (ticker) => (ticker.endsWith('.TA') ? 'ILA' : 'USD');
 
 async function api(path, options) {
   const res = await fetch(path, {
@@ -146,6 +152,27 @@ const holdingSubmitBtn = document.getElementById('holding-submit-btn');
 const holdingCancelEditBtn = document.getElementById('holding-cancel-edit');
 const dateHelper = document.getElementById('date-helper');
 
+// TASE stocks are priced and entered in Agorot (אג'), not Shekels — keep the
+// placeholder honest about which unit is expected so amounts don't get
+// entered 100x off.
+function updateHoldingPriceUnit() {
+  const isIL = document.getElementById('holding-market-select').value === 'IL';
+  document.getElementById('holding-price-input').placeholder = isIL
+    ? 'מחיר למניה בקנייה (אגורות)'
+    : 'מחיר למניה בקנייה ($)';
+}
+document.getElementById('holding-market-select').addEventListener('change', updateHoldingPriceUnit);
+updateHoldingPriceUnit();
+
+function updateDividendAmountUnit() {
+  const isIL = document.getElementById('dividend-market-select').value === 'IL';
+  document.getElementById('dividend-amount-input').placeholder = isIL
+    ? 'סכום למניה (אגורות)'
+    : 'סכום למניה ($)';
+}
+document.getElementById('dividend-market-select').addEventListener('change', updateDividendAmountUnit);
+updateDividendAmountUnit();
+
 function exitEditMode() {
   holdingForm.reset();
   holdingEditIdInput.value = '';
@@ -238,7 +265,7 @@ document.getElementById('find-date-search').addEventListener('click', async () =
       return;
     }
     results.innerHTML = '';
-    const currency = market === 'IL' ? 'ILS' : 'USD';
+    const currency = market === 'IL' ? 'ILA' : 'USD';
     for (const m of matches) {
       const li = document.createElement('li');
       const btn = document.createElement('button');

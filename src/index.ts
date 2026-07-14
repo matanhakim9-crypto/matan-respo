@@ -37,13 +37,18 @@ function normalizeTicker(rawTicker: string, market: Market): string {
   return market === 'IL' && !t.endsWith('.TA') ? `${t}.TA` : t;
 }
 
-function currencyForTicker(ticker: string): 'ILS' | 'USD' {
-  return ticker.endsWith('.TA') ? 'ILS' : 'USD';
+// Tel Aviv Stock Exchange feeds (including Yahoo's) quote prices in Agorot
+// (ILA), not Shekels — and that's also how Israeli users think and enter
+// numbers for TASE stocks, so the app keeps everything in Agorot natively
+// for .TA tickers instead of converting to Shekels.
+function currencyForTicker(ticker: string): 'ILA' | 'USD' {
+  return ticker.endsWith('.TA') ? 'ILA' : 'USD';
 }
 
-// Tel Aviv Stock Exchange feeds (including Yahoo's) quote prices in Agorot, not Shekels.
-function toNativePrice(ticker: string, rawPrice: number): number {
-  return ticker.endsWith('.TA') ? rawPrice / 100 : rawPrice;
+// ILA -> ILS is a flat /100; USD -> ILS uses the live FX rate.
+function toILSFactor(currency: 'ILA' | 'USD', fxRate: number): number {
+  if (currency === 'USD') return fxRate;
+  return 0.01;
 }
 
 type ChartTimeframe = { range: string } | { period1: number; period2: number };
@@ -74,9 +79,8 @@ async function getQuote(env: Bindings, ticker: string): Promise<number | null> {
   }
 
   const result = await fetchYahooChart(ticker, { range: '5d' });
-  const raw = result?.meta?.regularMarketPrice;
-  if (typeof raw !== 'number') return cached?.price ?? null;
-  const price = toNativePrice(ticker, raw);
+  const price = result?.meta?.regularMarketPrice;
+  if (typeof price !== 'number') return cached?.price ?? null;
 
   const now = new Date().toISOString();
   await env.DB.prepare(
@@ -112,7 +116,7 @@ async function findHistoricalDates(ticker: string, targetPrice: number, year?: n
   const timestamps: number[] = result.timestamp ?? [];
   const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
   const points = timestamps
-    .map((ts, i) => (closes[i] == null ? null : { date: new Date(ts * 1000).toISOString().slice(0, 10), price: toNativePrice(ticker, closes[i]!) }))
+    .map((ts, i) => (closes[i] == null ? null : { date: new Date(ts * 1000).toISOString().slice(0, 10), price: closes[i]! }))
     .filter((p): p is HistoryMatch => p !== null);
 
   for (const tolerance of PRICE_TOLERANCES) {
@@ -146,7 +150,7 @@ async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
   const raw = result?.events?.dividends;
   if (!raw) return [];
   return Object.values(raw as Record<string, { amount: number; date: number }>)
-    .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: toNativePrice(ticker, p.amount) }))
+    .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -357,7 +361,7 @@ app.get('/api/summary', async (c) => {
   const holdingsWithPrice = [];
   for (const h of holdings) {
     const currency = currencyForTicker(h.ticker);
-    const toILS = currency === 'USD' ? fxRate : 1;
+    const toILS = toILSFactor(currency, fxRate);
     const price = await getQuote(c.env, h.ticker);
     const nativeValue = (price ?? 0) * h.shares;
 
@@ -381,7 +385,7 @@ app.get('/api/summary', async (c) => {
   ).bind(oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
 
   const annualDividendIncome = paidLastYear.reduce((sum, p) => {
-    const toILS = currencyForTicker(p.ticker) === 'USD' ? fxRate : 1;
+    const toILS = toILSFactor(currencyForTicker(p.ticker), fxRate);
     return sum + p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
   }, 0);
 
@@ -418,7 +422,7 @@ app.get('/api/dividends/income-growth', async (c) => {
   const byMonth = new Map<string, number>();
   const byYear = new Map<string, number>();
   for (const p of paid) {
-    const toILS = currencyForTicker(p.ticker) === 'USD' ? fxRate : 1;
+    const toILS = toILSFactor(currencyForTicker(p.ticker), fxRate);
     const amountILS = p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
     const month = p.payment_date.slice(0, 7);
     const year = p.payment_date.slice(0, 4);

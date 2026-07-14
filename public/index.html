@@ -71,12 +71,12 @@
       <form id="holding-form" class="inline-form">
         <input type="hidden" name="id" id="holding-edit-id" />
         <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
-        <select name="market">
+        <select name="market" id="holding-market-select">
           <option value="US">ארה"ב</option>
           <option value="IL">ישראל (ת"א)</option>
         </select>
         <input name="shares" type="number" step="any" min="0" placeholder="כמות מניות" required />
-        <input name="purchase_price" type="number" step="any" min="0" placeholder="מחיר למניה בקנייה" required />
+        <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="מחיר למניה בקנייה ($)" required />
         <input name="purchase_date" type="date" id="purchase-date-input" />
         <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
 
@@ -116,11 +116,11 @@
         <summary class="link-btn">הצג טופס הוספה ידנית</summary>
         <form id="dividend-form" class="inline-form">
           <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
-          <select name="market">
+          <select name="market" id="dividend-market-select">
             <option value="US">ארה"ב</option>
             <option value="IL">ישראל (ת"א)</option>
           </select>
-          <input name="amount_per_share" type="number" step="any" min="0" placeholder="סכום למניה" required />
+          <input name="amount_per_share" id="dividend-amount-input" type="number" step="any" min="0" placeholder="סכום למניה ($)" required />
           <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
           <input name="payment_date" type="date" required />
           <select name="status">
