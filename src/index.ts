@@ -196,22 +196,32 @@ async function rememberAlias(env: Bindings, query: string, suggestion: TickerSug
   }
 }
 
-// Yahoo's search barely understands Hebrew, but Hebrew Wikipedia does, and
-// its inter-language links reliably give a company's standard English name
-// (e.g. "בנק בינלאומי" -> "First International Bank of Israel"), which
-// Yahoo's search can then resolve normally. This covers far more companies
-// than the hand-curated alias list, without any signup or API key.
+// Yahoo's search barely understands Hebrew, but Hebrew Wikipedia does. Many
+// smaller/local companies (e.g. TASE-only REITs) have a Hebrew Wikipedia
+// article and a linked Wikidata entity but no full English Wikipedia
+// article, so a plain inter-language link often comes up empty. Wikidata's
+// English *label* is filled in far more often than a full English article,
+// so resolve through that instead: Hebrew Wikipedia search -> its Wikidata
+// item -> that item's English label -> fed into the same Yahoo search used
+// for English queries.
 async function resolveEnglishNameViaWikipedia(query: string): Promise<string | null> {
   try {
-    const url = `https://he.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=langlinks&lllang=en&redirects=1`;
-    const res = await fetch(url, { headers: YAHOO_HEADERS });
-    if (!res.ok) return null;
-    const data = await res.json<any>();
-    const pages = data?.query?.pages;
+    const searchUrl = `https://he.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageprops&ppprop=wikibase_item`;
+    const searchRes = await fetch(searchUrl, { headers: YAHOO_HEADERS });
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json<any>();
+    const pages = searchData?.query?.pages;
     if (!pages) return null;
     const page = Object.values(pages)[0] as any;
-    const enTitle = page?.langlinks?.[0]?.['*'];
-    return typeof enTitle === 'string' ? enTitle : null;
+    const qid = page?.pageprops?.wikibase_item;
+    if (typeof qid !== 'string') return null;
+
+    const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=labels&languages=en&format=json`;
+    const entityRes = await fetch(entityUrl, { headers: YAHOO_HEADERS });
+    if (!entityRes.ok) return null;
+    const entityData = await entityRes.json<any>();
+    const label = entityData?.entities?.[qid]?.labels?.en?.value;
+    return typeof label === 'string' ? label : null;
   } catch {
     return null;
   }
