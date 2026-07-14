@@ -46,8 +46,9 @@ body {
 }
 
 .app-header-logo {
-  color: var(--green);
-  font-size: 1.1rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 auto;
 }
 
 .app-header h1 {
