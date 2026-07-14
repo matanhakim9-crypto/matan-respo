@@ -271,49 +271,6 @@ app.get('/api/dividends', async (c) => {
   return c.json(results);
 });
 
-app.get('/api/dividends/upcoming', async (c) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const { results } = await c.env.DB.prepare(
-    "SELECT * FROM dividend_payments WHERE payment_date >= ? AND status = 'expected' ORDER BY payment_date"
-  ).bind(today).all<DividendPayment>();
-  return c.json(results);
-});
-
-app.post('/api/dividends', async (c) => {
-  const body = await c.req.json<Partial<DividendPayment> & { market?: string }>();
-  const { ticker, amount_per_share, payment_date, status, shares_at_payment } = body;
-  const market: Market = body.market === 'IL' ? 'IL' : 'US';
-  if (!ticker || !amount_per_share || !payment_date) {
-    return c.json({ error: 'ticker, amount_per_share and payment_date are required' }, 400);
-  }
-  const normalizedTicker = normalizeTicker(ticker, market);
-  const result = await c.env.DB.prepare(
-    `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-     VALUES (?, ?, ?, ?, ?)`
-  ).bind(
-    normalizedTicker,
-    amount_per_share,
-    payment_date,
-    status ?? 'expected',
-    shares_at_payment ?? null
-  ).run();
-  return c.json({ id: result.meta.last_row_id }, 201);
-});
-
-app.patch('/api/dividends/:id', async (c) => {
-  const id = c.req.param('id');
-  const body = await c.req.json<Partial<DividendPayment>>();
-  if (!body.status) return c.json({ error: 'status is required' }, 400);
-  await c.env.DB.prepare('UPDATE dividend_payments SET status = ? WHERE id = ?').bind(body.status, id).run();
-  return c.json({ ok: true });
-});
-
-app.delete('/api/dividends/:id', async (c) => {
-  const id = c.req.param('id');
-  await c.env.DB.prepare('DELETE FROM dividend_payments WHERE id = ?').bind(id).run();
-  return c.json({ ok: true });
-});
-
 app.post('/api/dividends/sync-all', async (c) => {
   const { results: holdings } = await c.env.DB.prepare('SELECT ticker, shares FROM holdings').all<{ ticker: string; shares: number }>();
   for (const h of holdings) {

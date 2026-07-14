@@ -108,30 +108,6 @@
         <p class="empty">טוען…</p>
       </div>
     </section>
-
-    <section class="panel">
-      <h2>הוספת דיבידנד ידנית</h2>
-      <p class="hint">משתמשים בזה רק אם החיפוש האוטומטי לא מצא נתונים למניה מסוימת.</p>
-      <details>
-        <summary class="link-btn">הצג טופס הוספה ידנית</summary>
-        <form id="dividend-form" class="inline-form">
-          <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
-          <select name="market" id="dividend-market-select">
-            <option value="US">ארה"ב</option>
-            <option value="IL">ישראל (ת"א)</option>
-          </select>
-          <input name="amount_per_share" id="dividend-amount-input" type="number" step="any" min="0" placeholder="סכום למניה ($)" required />
-          <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
-          <input name="payment_date" type="date" required />
-          <select name="status">
-            <option value="expected">צפוי</option>
-            <option value="paid">שולם</option>
-          </select>
-          <p id="dividend-error" class="form-error hidden"></p>
-          <button type="submit">הוסף תשלום</button>
-        </form>
-      </details>
-    </section>
   </main>
 
   <script src="/app.js"></script>

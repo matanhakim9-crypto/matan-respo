@@ -76,7 +76,7 @@ function renderHoldings(holdings) {
       <td class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
       <td>
         <button class="edit-btn" data-id="${h.id}">ערוך</button>
-        <button class="delete-btn" data-id="${h.id}" data-type="holding">מחק</button>
+        <button class="delete-btn" data-id="${h.id}">מחק</button>
       </td>
     `;
     body.appendChild(tr);
@@ -108,16 +108,23 @@ function buildDividendDetailRow(holding) {
     const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
     td.innerHTML = `
       <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(toDisplay(total), displayCurrency)}</strong></div>
-      <ul class="stock-dividend-list">
-        ${payments.map((p) => `
-          <li>
-            <span class="div-date">${fmtDate(p.payment_date)}</span>
-            <span class="div-amount">${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</span>
-            <span class="div-rate">${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}/מניה</span>
-            <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
-          </li>
-        `).join('')}
-      </ul>
+      <div class="stock-dividend-table-wrap">
+        <table class="stock-dividend-table">
+          <thead>
+            <tr><th>תאריך</th><th>סה"כ</th><th>למניה</th><th>סטטוס</th></tr>
+          </thead>
+          <tbody>
+            ${payments.map((p) => `
+              <tr class="${p.status === 'expected' ? 'is-expected' : ''}">
+                <td>${fmtDate(p.payment_date)}</td>
+                <td class="div-amount">${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</td>
+                <td class="div-rate">${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</td>
+                <td><span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
   }
 
@@ -174,15 +181,6 @@ function updateHoldingPriceUnit() {
 }
 document.getElementById('holding-market-select').addEventListener('change', updateHoldingPriceUnit);
 updateHoldingPriceUnit();
-
-function updateDividendAmountUnit() {
-  const isIL = document.getElementById('dividend-market-select').value === 'IL';
-  document.getElementById('dividend-amount-input').placeholder = isIL
-    ? 'סכום למניה (אגורות)'
-    : 'סכום למניה ($)';
-}
-document.getElementById('dividend-market-select').addEventListener('change', updateDividendAmountUnit);
-updateDividendAmountUnit();
 
 function exitEditMode() {
   holdingForm.reset();
@@ -295,32 +293,6 @@ document.getElementById('find-date-search').addEventListener('click', async () =
   }
 });
 
-// ---- Dividend manual entry (fallback) ----
-
-document.getElementById('dividend-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  clearError('dividend-error');
-  const form = e.target;
-  const data = Object.fromEntries(new FormData(form).entries());
-  try {
-    await api('/api/dividends', {
-      method: 'POST',
-      body: JSON.stringify({
-        ticker: data.ticker,
-        market: data.market,
-        amount_per_share: parseFloat(data.amount_per_share),
-        shares_at_payment: data.shares_at_payment ? parseFloat(data.shares_at_payment) : null,
-        payment_date: data.payment_date,
-        status: data.status,
-      }),
-    });
-    form.reset();
-    await refreshAll();
-  } catch (err) {
-    showError('dividend-error', err);
-  }
-});
-
 // ---- Dividend income growth (month over month, year over year) ----
 
 const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -400,14 +372,12 @@ document.getElementById('sync-dividends-btn').addEventListener('click', async ()
   }
 });
 
-// ---- Delete (holdings + dividends) ----
+// ---- Delete holding ----
 
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('.delete-btn');
   if (!btn) return;
-  const { id, type } = btn.dataset;
-  const endpoint = type === 'holding' ? `/api/holdings/${id}` : `/api/dividends/${id}`;
-  await api(endpoint, { method: 'DELETE' });
+  await api(`/api/holdings/${btn.dataset.id}`, { method: 'DELETE' });
   await refreshAll();
 });
 
