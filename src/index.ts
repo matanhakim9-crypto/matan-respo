@@ -46,9 +46,10 @@ function toNativePrice(ticker: string, rawPrice: number): number {
   return ticker.endsWith('.TA') ? rawPrice / 100 : rawPrice;
 }
 
-async function fetchYahooChart(ticker: string, range: string): Promise<any | null> {
+async function fetchYahooChart(ticker: string, range: string, events?: 'div'): Promise<any | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d`;
+    const eventsParam = events ? `&events=${events}` : '';
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d${eventsParam}`;
     const res = await fetch(url, { headers: YAHOO_HEADERS });
     if (!res.ok) return null;
     const data = await res.json<any>();
@@ -115,6 +116,67 @@ async function findHistoricalDates(ticker: string, targetPrice: number): Promise
   return matches.reverse().slice(0, 12);
 }
 
+// ---------- Dividend auto-discovery ----------
+
+type DivPoint = { date: string; amount: number };
+
+async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
+  const result = await fetchYahooChart(ticker, '10y', 'div');
+  const raw = result?.events?.dividends;
+  if (!raw) return [];
+  return Object.values(raw as Record<string, { amount: number; date: number }>)
+    .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: toNativePrice(ticker, p.amount) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Companies usually keep a steady per-share amount and cadence between
+// payments, so the next expected dividend is estimated from the gap and
+// amount of the last two historical payments rather than a separate,
+// less-reliable Yahoo endpoint.
+function projectNextDividend(history: DivPoint[]): DivPoint | null {
+  if (history.length < 2) return null;
+  const last = history[history.length - 1];
+  const prev = history[history.length - 2];
+  const intervalMs = new Date(last.date).getTime() - new Date(prev.date).getTime();
+  if (intervalMs <= 0) return null;
+  const nextMs = new Date(last.date).getTime() + intervalMs;
+  if (nextMs < Date.now()) return null;
+  return { date: new Date(nextMs).toISOString().slice(0, 10), amount: last.amount };
+}
+
+async function syncDividendsForHolding(env: Bindings, ticker: string, shares: number): Promise<void> {
+  const history = await fetchDividendHistory(ticker);
+
+  for (const point of history) {
+    const existing = await env.DB.prepare(
+      'SELECT id FROM dividend_payments WHERE ticker = ? AND payment_date = ?'
+    ).bind(ticker, point.date).first<{ id: number }>();
+    if (existing) {
+      await env.DB.prepare(
+        "UPDATE dividend_payments SET amount_per_share = ?, shares_at_payment = ?, status = 'paid' WHERE id = ?"
+      ).bind(point.amount, shares, existing.id).run();
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
+         VALUES (?, ?, ?, 'paid', ?)`
+      ).bind(ticker, point.amount, point.date, shares).run();
+    }
+  }
+
+  const next = projectNextDividend(history);
+  if (next) {
+    const existing = await env.DB.prepare(
+      'SELECT id FROM dividend_payments WHERE ticker = ? AND payment_date = ?'
+    ).bind(ticker, next.date).first<{ id: number }>();
+    if (!existing) {
+      await env.DB.prepare(
+        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
+         VALUES (?, ?, ?, 'expected', ?)`
+      ).bind(ticker, next.amount, next.date, shares).run();
+    }
+  }
+}
+
 // ---------- Holdings ----------
 
 app.get('/api/holdings', async (c) => {
@@ -135,7 +197,38 @@ app.post('/api/holdings', async (c) => {
     `INSERT INTO holdings (ticker, market, shares, purchase_price, amount_invested, purchase_date, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(normalizedTicker, market, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
+
+  await syncDividendsForHolding(c.env, normalizedTicker, shares).catch(() => {});
+
   return c.json({ id: result.meta.last_row_id }, 201);
+});
+
+app.patch('/api/holdings/:id', async (c) => {
+  const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT * FROM holdings WHERE id = ?').bind(id).first<Holding>();
+  if (!existing) return c.json({ error: 'holding not found' }, 404);
+
+  const body = await c.req.json<Partial<Holding> & { market?: string }>();
+  const market: Market = body.market === 'IL' || body.market === 'US' ? body.market : existing.market;
+  const shares = body.shares ?? existing.shares;
+  const purchase_price = body.purchase_price ?? existing.purchase_price;
+  const ticker = body.ticker ? normalizeTicker(body.ticker, market) : existing.ticker;
+  const purchase_date = body.purchase_date !== undefined ? body.purchase_date : existing.purchase_date;
+  const notes = body.notes !== undefined ? body.notes : existing.notes;
+
+  if (!ticker || !shares || !purchase_price) {
+    return c.json({ error: 'ticker, shares and purchase_price are required' }, 400);
+  }
+  const amount_invested = shares * purchase_price;
+
+  await c.env.DB.prepare(
+    `UPDATE holdings SET ticker = ?, market = ?, shares = ?, purchase_price = ?, amount_invested = ?, purchase_date = ?, notes = ?
+     WHERE id = ?`
+  ).bind(ticker, market, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
+
+  await syncDividendsForHolding(c.env, ticker, shares).catch(() => {});
+
+  return c.json({ ok: true });
 });
 
 app.delete('/api/holdings/:id', async (c) => {
@@ -194,6 +287,14 @@ app.delete('/api/dividends/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare('DELETE FROM dividend_payments WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
+});
+
+app.post('/api/dividends/sync-all', async (c) => {
+  const { results: holdings } = await c.env.DB.prepare('SELECT ticker, shares FROM holdings').all<{ ticker: string; shares: number }>();
+  for (const h of holdings) {
+    await syncDividendsForHolding(c.env, h.ticker, h.shares).catch(() => {});
+  }
+  return c.json({ ok: true, synced: holdings.length });
 });
 
 // ---------- Live quote ----------

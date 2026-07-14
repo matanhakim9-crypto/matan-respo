@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dividend-tracker-v1';
+const CACHE_NAME = 'dividend-tracker-v2';
 const APP_SHELL = [
   '/',
   '/style.css',
@@ -26,21 +26,21 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Never cache API calls: dividend data must always be fresh.
+  // Never cache API calls: portfolio/dividend data must always be fresh.
   if (url.pathname.startsWith('/api/')) return;
 
+  // Network-first: always serve the latest deployed app when online, so a
+  // redeploy shows up immediately instead of waiting for a second reload.
+  // The cache is only a fallback for when the network is unavailable.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

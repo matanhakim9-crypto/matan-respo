@@ -62,6 +62,7 @@
       </div>
 
       <form id="holding-form" class="inline-form">
+        <input type="hidden" name="id" id="holding-edit-id" />
         <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
         <select name="market">
           <option value="US">ארה"ב</option>
@@ -78,32 +79,46 @@
           <ul id="date-helper-results" class="date-chip-list"></ul>
         </div>
 
-        <button type="submit">הוסף מניה</button>
+        <p id="holding-error" class="form-error hidden"></p>
+        <button type="submit" id="holding-submit-btn">הוסף מניה</button>
+        <button type="button" id="holding-cancel-edit" class="link-btn hidden">בטל עריכה</button>
       </form>
     </section>
 
     <section class="panel">
-      <h2>תשלומי דיבידנד צפויים</h2>
+      <h2>תשלומי דיבידנד</h2>
+      <p class="hint">
+        תשלומי דיבידנד נשלפים אוטומטית מהיסטוריית המניה בכל פעם שמוסיפים או מעדכנים מניה.
+        התשלום הבא מוערך לפי הקצב וההיקף של התשלומים האחרונים.
+      </p>
+      <button type="button" id="sync-dividends-btn">רענן דיבידנדים לכל המניות</button>
+      <p id="sync-status" class="hint"></p>
+
+      <h3>צפויים</h3>
       <ul id="upcoming-list" class="payment-list"></ul>
 
       <h3>כל התשלומים</h3>
       <ul id="all-payments-list" class="payment-list"></ul>
 
-      <form id="dividend-form" class="inline-form">
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
-        <select name="market">
-          <option value="US">ארה"ב</option>
-          <option value="IL">ישראל (ת"א)</option>
-        </select>
-        <input name="amount_per_share" type="number" step="any" min="0" placeholder="סכום למניה" required />
-        <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
-        <input name="payment_date" type="date" required />
-        <select name="status">
-          <option value="expected">צפוי</option>
-          <option value="paid">שולם</option>
-        </select>
-        <button type="submit">הוסף תשלום</button>
-      </form>
+      <details>
+        <summary class="link-btn">הוספה ידנית (אם לא נמצא אוטומטית)</summary>
+        <form id="dividend-form" class="inline-form">
+          <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
+          <select name="market">
+            <option value="US">ארה"ב</option>
+            <option value="IL">ישראל (ת"א)</option>
+          </select>
+          <input name="amount_per_share" type="number" step="any" min="0" placeholder="סכום למניה" required />
+          <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
+          <input name="payment_date" type="date" required />
+          <select name="status">
+            <option value="expected">צפוי</option>
+            <option value="paid">שולם</option>
+          </select>
+          <p id="dividend-error" class="form-error hidden"></p>
+          <button type="submit">הוסף תשלום</button>
+        </form>
+      </details>
     </section>
   </main>
 

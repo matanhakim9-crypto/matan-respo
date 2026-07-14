@@ -201,11 +201,11 @@ th {
   padding: 0.65rem;
 }
 
-.date-helper.hidden {
-  display: none;
+.hidden {
+  display: none !important;
 }
 
-.date-helper .hint {
+.hint {
   margin: 0 0 0.5rem;
   font-size: 0.8rem;
   color: var(--muted);
@@ -243,4 +243,40 @@ th {
   background: var(--green);
   color: white;
   border-color: var(--green);
+}
+
+.form-error {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--red);
+  font-size: 0.82rem;
+}
+
+.edit-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-inline-end: 0.4rem;
+}
+
+#sync-dividends-btn {
+  padding: 0.5rem 0.75rem;
+  background: var(--green);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-bottom: 0.5rem;
+}
+
+details summary {
+  cursor: pointer;
+  margin-top: 1rem;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
 }
