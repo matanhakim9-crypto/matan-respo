@@ -344,9 +344,10 @@ app.get('/api/summary', async (c) => {
     currentValue += nativeValue * toILS;
     totalInvested += h.amount_invested * toILS;
     const gainPct = h.amount_invested > 0 ? ((nativeValue - h.amount_invested) / h.amount_invested) * 100 : 0;
-    // Trailing-12-month dividend income relative to cost basis (yield on cost).
+    // Trailing-12-month dividend income relative to current market value
+    // (standard dividend yield, not yield on cost).
     const stockDividendIncome = dividendIncomeByTicker.get(h.ticker) ?? 0;
-    const dividendYieldPct = h.amount_invested > 0 ? (stockDividendIncome / h.amount_invested) * 100 : 0;
+    const dividendYieldPct = nativeValue > 0 ? (stockDividendIncome / nativeValue) * 100 : 0;
     holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue, gainPct, dividendYieldPct });
   }
 
