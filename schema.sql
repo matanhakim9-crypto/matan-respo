@@ -25,3 +25,14 @@ CREATE TABLE IF NOT EXISTS quote_cache (
   price REAL NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ticker_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  query TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  market TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_alias_query_symbol ON ticker_aliases(query, symbol);

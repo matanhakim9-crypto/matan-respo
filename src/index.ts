@@ -171,6 +171,31 @@ async function symbolHasQuote(ticker: string): Promise<boolean> {
   return typeof result?.meta?.regularMarketPrice === 'number';
 }
 
+// Companies successfully resolved through Wikipedia get remembered here, so
+// the next search for the same name is an instant DB hit instead of another
+// Wikipedia + Yahoo round trip. This grows the effective coverage of the
+// hand-curated alias list over time as real searches happen.
+async function matchDbAliases(env: Bindings, query: string): Promise<TickerSuggestion[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT symbol, display_name, market FROM ticker_aliases
+     WHERE ? LIKE '%' || query || '%' OR query LIKE '%' || ? || '%'`
+  ).bind(q, q).all<{ symbol: string; display_name: string; market: Market }>();
+  return results.map((r) => ({ symbol: r.symbol, name: r.display_name, market: r.market }));
+}
+
+async function rememberAlias(env: Bindings, query: string, suggestion: TickerSuggestion): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO ticker_aliases (query, symbol, display_name, market, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(query, symbol) DO NOTHING`
+    ).bind(query.trim(), suggestion.symbol, suggestion.name, suggestion.market, new Date().toISOString()).run();
+  } catch {
+    // best-effort cache; a failure here shouldn't break the search response
+  }
+}
+
 // Yahoo's search barely understands Hebrew, but Hebrew Wikipedia does, and
 // its inter-language links reliably give a company's standard English name
 // (e.g. "בנק בינלאומי" -> "First International Bank of Israel"), which
@@ -213,7 +238,7 @@ async function searchYahoo(query: string, results: TickerSuggestion[]): Promise<
   }
 }
 
-async function searchTickers(query: string): Promise<TickerSuggestion[]> {
+async function searchTickers(env: Bindings, query: string): Promise<TickerSuggestion[]> {
   const results: TickerSuggestion[] = [];
 
   const localMatches = matchLocalAliases(query);
@@ -223,11 +248,26 @@ async function searchTickers(query: string): Promise<TickerSuggestion[]> {
     }
   }
 
+  for (const m of await matchDbAliases(env, query)) {
+    if (!results.some((r) => r.symbol === m.symbol)) results.push(m);
+  }
+
+  const beforeLiveSearch = results.length;
+
   await searchYahoo(query, results);
 
-  if (/[֐-׿]/.test(query)) {
+  const isHebrew = /[֐-׿]/.test(query);
+  if (isHebrew) {
     const englishName = await resolveEnglishNameViaWikipedia(query);
     if (englishName) await searchYahoo(englishName, results);
+  }
+
+  // Remember anything newly discovered via a live Hebrew search so the next
+  // person (or the next time) skips straight to the DB cache.
+  if (isHebrew) {
+    for (const r of results.slice(beforeLiveSearch)) {
+      await rememberAlias(env, query, r);
+    }
   }
 
   return results.slice(0, 8);
@@ -448,7 +488,7 @@ app.post('/api/dividends/sync-all', async (c) => {
 app.get('/api/search-ticker', async (c) => {
   const q = c.req.query('q')?.trim() ?? '';
   if (q.length < 2) return c.json({ results: [] });
-  const results = await searchTickers(q);
+  const results = await searchTickers(c.env, q);
   return c.json({ results });
 });
 

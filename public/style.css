@@ -16,6 +16,13 @@
 
 * { box-sizing: border-box; }
 
+html, body {
+  /* Safety net: no single overflowing element should ever force the whole
+     page to scroll sideways on a phone. */
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -655,5 +662,40 @@ details summary::-webkit-details-marker {
 
   .purchase-info {
     grid-template-columns: 1fr;
+  }
+
+  /* Growth chart bars: label + value on their own line, bar fill on the
+     next, instead of three flex items fighting for one narrow row. */
+  .bar-row {
+    flex-wrap: wrap;
+  }
+
+  .bar-label {
+    flex: 1 1 auto;
+    order: 1;
+  }
+
+  .bar-value {
+    flex: 0 0 auto;
+    order: 2;
+  }
+
+  .bar-track {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .date-helper-row {
+    flex-wrap: wrap;
+  }
+
+  .date-helper-row input,
+  .date-helper button#find-date-search {
+    flex: 1 1 100%;
+  }
+
+  .ticker-suggestions {
+    left: -0.5rem;
+    right: -0.5rem;
   }
 }
