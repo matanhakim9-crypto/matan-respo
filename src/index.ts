@@ -46,10 +46,15 @@ function toNativePrice(ticker: string, rawPrice: number): number {
   return ticker.endsWith('.TA') ? rawPrice / 100 : rawPrice;
 }
 
-async function fetchYahooChart(ticker: string, range: string, events?: 'div'): Promise<any | null> {
+type ChartTimeframe = { range: string } | { period1: number; period2: number };
+
+async function fetchYahooChart(ticker: string, timeframe: ChartTimeframe, events?: 'div'): Promise<any | null> {
   try {
     const eventsParam = events ? `&events=${events}` : '';
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d${eventsParam}`;
+    const timeParam = 'range' in timeframe
+      ? `range=${timeframe.range}`
+      : `period1=${timeframe.period1}&period2=${timeframe.period2}`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?${timeParam}&interval=1d${eventsParam}`;
     const res = await fetch(url, { headers: YAHOO_HEADERS });
     if (!res.ok) return null;
     const data = await res.json<any>();
@@ -68,7 +73,7 @@ async function getQuote(env: Bindings, ticker: string): Promise<number | null> {
     return cached.price;
   }
 
-  const result = await fetchYahooChart(ticker, '5d');
+  const result = await fetchYahooChart(ticker, { range: '5d' });
   const raw = result?.meta?.regularMarketPrice;
   if (typeof raw !== 'number') return cached?.price ?? null;
   const price = toNativePrice(ticker, raw);
@@ -89,31 +94,47 @@ async function getUsdIlsRate(env: Bindings): Promise<number> {
 
 type HistoryMatch = { date: string; price: number };
 
-async function findHistoricalDates(ticker: string, targetPrice: number): Promise<HistoryMatch[]> {
-  const result = await fetchYahooChart(ticker, '10y');
+// Tries increasingly loose tolerances so a precise price still returns a
+// short, relevant list instead of either nothing or a wall of loose matches.
+const PRICE_TOLERANCES = [0.008, 0.02, 0.04];
+
+async function findHistoricalDates(ticker: string, targetPrice: number, year?: number): Promise<HistoryMatch[]> {
+  const timeframe: ChartTimeframe = year
+    ? {
+        period1: Math.floor(new Date(Date.UTC(year, 0, 1)).getTime() / 1000),
+        period2: Math.min(Math.floor(new Date(Date.UTC(year, 11, 31)).getTime() / 1000), Math.floor(Date.now() / 1000)),
+      }
+    : { range: '10y' };
+
+  const result = await fetchYahooChart(ticker, timeframe);
   if (!result) return [];
 
   const timestamps: number[] = result.timestamp ?? [];
   const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
-  const tolerance = 0.03;
+  const points = timestamps
+    .map((ts, i) => (closes[i] == null ? null : { date: new Date(ts * 1000).toISOString().slice(0, 10), price: toNativePrice(ticker, closes[i]!) }))
+    .filter((p): p is HistoryMatch => p !== null);
 
-  const matches: HistoryMatch[] = [];
-  let cooldown = 0;
-  for (let i = 0; i < timestamps.length; i++) {
-    if (cooldown > 0) {
-      cooldown--;
-      continue;
+  for (const tolerance of PRICE_TOLERANCES) {
+    const matches: HistoryMatch[] = [];
+    let cooldown = 0;
+    for (const point of points) {
+      if (cooldown > 0) {
+        cooldown--;
+        continue;
+      }
+      if (Math.abs(point.price - targetPrice) / targetPrice <= tolerance) {
+        matches.push(point);
+        cooldown = year ? 3 : 15; // a narrow one-year window needs less spacing than a decade
+      }
     }
-    const raw = closes[i];
-    if (raw == null) continue;
-    const price = toNativePrice(ticker, raw);
-    if (Math.abs(price - targetPrice) / targetPrice <= tolerance) {
-      matches.push({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), price });
-      cooldown = 15; // skip ahead so a flat stretch doesn't return the same plateau dozens of times
+    if (matches.length > 0) {
+      matches.sort((a, b) => Math.abs(a.price - targetPrice) - Math.abs(b.price - targetPrice));
+      return matches.slice(0, 8);
     }
   }
 
-  return matches.reverse().slice(0, 12);
+  return [];
 }
 
 // ---------- Dividend auto-discovery ----------
@@ -121,7 +142,7 @@ async function findHistoricalDates(ticker: string, targetPrice: number): Promise
 type DivPoint = { date: string; amount: number };
 
 async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
-  const result = await fetchYahooChart(ticker, '10y', 'div');
+  const result = await fetchYahooChart(ticker, { range: '10y' }, 'div');
   const raw = result?.events?.dividends;
   if (!raw) return [];
   return Object.values(raw as Record<string, { amount: number; date: number }>)
@@ -146,35 +167,33 @@ function projectNextDividend(history: DivPoint[]): DivPoint | null {
 
 async function syncDividendsForHolding(env: Bindings, ticker: string, shares: number): Promise<void> {
   const history = await fetchDividendHistory(ticker);
+  if (history.length === 0) return;
 
-  for (const point of history) {
-    const existing = await env.DB.prepare(
-      'SELECT id FROM dividend_payments WHERE ticker = ? AND payment_date = ?'
-    ).bind(ticker, point.date).first<{ id: number }>();
-    if (existing) {
-      await env.DB.prepare(
-        "UPDATE dividend_payments SET amount_per_share = ?, shares_at_payment = ?, status = 'paid' WHERE id = ?"
-      ).bind(point.amount, shares, existing.id).run();
-    } else {
-      await env.DB.prepare(
-        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'paid', ?)`
-      ).bind(ticker, point.amount, point.date, shares).run();
-    }
-  }
+  // Batched into one round trip (rather than a read-then-write per payment)
+  // since a decade of quarterly dividends is ~40 statements.
+  const statements = history.map((point) =>
+    env.DB.prepare(
+      `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
+       VALUES (?, ?, ?, 'paid', ?)
+       ON CONFLICT(ticker, payment_date) DO UPDATE SET
+         amount_per_share = excluded.amount_per_share,
+         status = 'paid',
+         shares_at_payment = excluded.shares_at_payment`
+    ).bind(ticker, point.amount, point.date, shares)
+  );
 
   const next = projectNextDividend(history);
   if (next) {
-    const existing = await env.DB.prepare(
-      'SELECT id FROM dividend_payments WHERE ticker = ? AND payment_date = ?'
-    ).bind(ticker, next.date).first<{ id: number }>();
-    if (!existing) {
-      await env.DB.prepare(
+    statements.push(
+      env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'expected', ?)`
-      ).bind(ticker, next.amount, next.date, shares).run();
-    }
+         VALUES (?, ?, ?, 'expected', ?)
+         ON CONFLICT(ticker, payment_date) DO NOTHING`
+      ).bind(ticker, next.amount, next.date, shares)
+    );
   }
+
+  await env.DB.batch(statements);
 }
 
 // ---------- Holdings ----------
@@ -198,7 +217,9 @@ app.post('/api/holdings', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).bind(normalizedTicker, market, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
 
-  await syncDividendsForHolding(c.env, normalizedTicker, shares).catch(() => {});
+  // Runs after the response is sent so adding a holding feels instant;
+  // dividend history shows up moments later on the next refresh.
+  c.executionCtx.waitUntil(syncDividendsForHolding(c.env, normalizedTicker, shares).catch(() => {}));
 
   return c.json({ id: result.meta.last_row_id }, 201);
 });
@@ -226,7 +247,7 @@ app.patch('/api/holdings/:id', async (c) => {
      WHERE id = ?`
   ).bind(ticker, market, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
 
-  await syncDividendsForHolding(c.env, ticker, shares).catch(() => {});
+  c.executionCtx.waitUntil(syncDividendsForHolding(c.env, ticker, shares).catch(() => {}));
 
   return c.json({ ok: true });
 });
@@ -316,7 +337,12 @@ app.get('/api/history/:ticker', async (c) => {
   if (!price || Number.isNaN(price) || price <= 0) {
     return c.json({ error: 'a positive price query param is required' }, 400);
   }
-  const matches = await findHistoricalDates(ticker, price);
+  const yearParam = c.req.query('year');
+  const year = yearParam ? parseInt(yearParam, 10) : undefined;
+  if (year !== undefined && (Number.isNaN(year) || year < 1980 || year > new Date().getFullYear())) {
+    return c.json({ error: 'year must be a valid past year' }, 400);
+  }
+  const matches = await findHistoricalDates(ticker, price, year);
   return c.json({ ticker, matches });
 });
 

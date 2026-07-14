@@ -18,6 +18,8 @@ async function api(path, options) {
 }
 
 let lastHoldings = [];
+let lastDividends = [];
+let expandedHoldingId = null;
 
 async function loadSummary() {
   const s = await api('/api/summary');
@@ -46,9 +48,11 @@ function renderHoldings(holdings) {
   for (const h of holdings) {
     const currency = h.currency ?? currencyForTicker(h.ticker);
     const tr = document.createElement('tr');
+    tr.className = 'holding-row';
+    tr.dataset.holdingId = h.id;
     tr.innerHTML = `
-      <td>${h.ticker}</td>
-      <td>${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}</td>
+      <td><span class="expand-arrow">▸</span> ${h.ticker}</td>
+      <td><span class="market-badge market-${h.market}">${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}</span></td>
       <td>${h.shares}</td>
       <td>${h.currentPrice != null ? fmtMoney(h.currentPrice, currency) : '—'}</td>
       <td>${fmtMoney(h.currentValue, currency)}</td>
@@ -58,43 +62,55 @@ function renderHoldings(holdings) {
       </td>
     `;
     body.appendChild(tr);
+    if (String(h.id) === String(expandedHoldingId)) {
+      body.appendChild(buildDividendDetailRow(h));
+      tr.classList.add('expanded');
+    }
   }
+}
+
+function buildDividendDetailRow(holding) {
+  const currency = currencyForTicker(holding.ticker);
+  const payments = lastDividends
+    .filter((p) => p.ticker === holding.ticker && (!holding.purchase_date || p.payment_date >= holding.purchase_date))
+    .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+
+  const tr = document.createElement('tr');
+  tr.className = 'dividend-detail-row';
+  const td = document.createElement('td');
+  td.colSpan = 6;
+
+  if (payments.length === 0) {
+    td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
+  } else {
+    const total = payments
+      .filter((p) => p.status === 'paid')
+      .reduce((sum, p) => sum + p.amount_per_share * (p.shares_at_payment ?? 0), 0);
+    td.innerHTML = `
+      <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(total, currency)}</strong></div>
+      <ul class="stock-dividend-list">
+        ${payments.map((p) => `
+          <li>
+            <span class="div-date">${fmtDate(p.payment_date)}</span>
+            <span class="div-amount">${fmtMoney(p.amount_per_share, currency)}/מניה</span>
+            <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  }
+
+  tr.appendChild(td);
+  return tr;
 }
 
 async function loadDividends() {
-  const [upcoming, all] = await Promise.all([
-    api('/api/dividends/upcoming'),
-    api('/api/dividends'),
-  ]);
-  renderPaymentList('upcoming-list', upcoming, 'עדיין אין תשלומים צפויים');
-  renderPaymentList('all-payments-list', all, 'עדיין לא נוספו תשלומים');
-}
-
-function renderPaymentList(elementId, payments, emptyMessage) {
-  const ul = document.getElementById(elementId);
-  ul.innerHTML = '';
-  if (payments.length === 0) {
-    ul.innerHTML = `<li class="empty">${emptyMessage}</li>`;
-    return;
-  }
-  for (const p of payments) {
-    const currency = currencyForTicker(p.ticker);
-    const total = p.shares_at_payment ? p.amount_per_share * p.shares_at_payment : null;
-    const li = document.createElement('li');
-    li.innerHTML = `
-      <span>
-        <strong>${p.ticker}</strong> · ${fmtDate(p.payment_date)} ·
-        ${fmtMoney(p.amount_per_share, currency)}/מניה${total != null ? ` · סה"כ ${fmtMoney(total, currency)}` : ''}
-        <span class="status-${p.status}"> (${p.status === 'paid' ? 'שולם' : 'צפוי'})</span>
-      </span>
-      <button class="delete-btn" data-id="${p.id}" data-type="dividend">מחק</button>
-    `;
-    ul.appendChild(li);
-  }
+  lastDividends = await api('/api/dividends');
 }
 
 async function refreshAll() {
   await Promise.all([loadSummary(), loadDividends()]);
+  renderHoldings(lastHoldings);
 }
 
 function showError(elementId, err) {
@@ -106,6 +122,17 @@ function showError(elementId, err) {
 function clearError(elementId) {
   document.getElementById(elementId).classList.add('hidden');
 }
+
+// ---- Expand / collapse per-stock dividend history ----
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.edit-btn') || e.target.closest('.delete-btn')) return;
+  const row = e.target.closest('tr.holding-row');
+  if (!row) return;
+  const id = row.dataset.holdingId;
+  expandedHoldingId = expandedHoldingId === id ? null : id;
+  renderHoldings(lastHoldings);
+});
 
 // ---- Holding add / edit ----
 
@@ -146,6 +173,9 @@ holdingForm.addEventListener('submit', async (e) => {
     }
     exitEditMode();
     await refreshAll();
+    // Dividend sync runs in the background on the server for speed, so give
+    // it a moment and refresh again to pick up the newly-fetched history.
+    setTimeout(() => refreshAll().catch(() => {}), 3000);
   } catch (err) {
     showError('holding-error', err);
   }
@@ -186,6 +216,7 @@ document.getElementById('find-date-search').addEventListener('click', async () =
   const ticker = holdingForm.ticker.value.trim();
   const market = holdingForm.market.value;
   const price = parseFloat(holdingForm.purchase_price.value);
+  const yearValue = document.getElementById('date-helper-year').value;
 
   if (!ticker || !price) {
     results.innerHTML = '<li class="empty">קודם מלא טיקר ומחיר למעלה</li>';
@@ -194,11 +225,12 @@ document.getElementById('find-date-search').addEventListener('click', async () =
 
   results.innerHTML = '<li class="empty">מחפש…</li>';
   try {
+    const yearParam = yearValue ? `&year=${encodeURIComponent(yearValue)}` : '';
     const { matches } = await api(
-      `/api/history/${encodeURIComponent(ticker)}?market=${market}&price=${price}`
+      `/api/history/${encodeURIComponent(ticker)}?market=${market}&price=${price}${yearParam}`
     );
     if (!matches || matches.length === 0) {
-      results.innerHTML = '<li class="empty">לא נמצאו תאריכים במחיר הזה, נסה מחיר אחר</li>';
+      results.innerHTML = '<li class="empty">לא נמצאו תאריכים במחיר הזה, נסה מחיר או שנה אחרים</li>';
       return;
     }
     results.innerHTML = '';

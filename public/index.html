@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#16a34a" />
+  <meta name="theme-color" content="#0b0d12" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -44,7 +44,13 @@
     </section>
 
     <section class="panel">
-      <h2>מניות בתיק</h2>
+      <div class="panel-head">
+        <h2>מניות בתיק</h2>
+        <button type="button" id="sync-dividends-btn">רענן דיבידנדים</button>
+      </div>
+      <p class="hint">לחיצה על שורת מניה מציגה את היסטוריית הדיבידנד שלה. דיבידנדים נשלפים אוטומטית בכל הוספה/עדכון.</p>
+      <p id="sync-status" class="hint"></p>
+
       <div class="table-wrap">
         <table id="holdings-table">
           <thead>
@@ -74,8 +80,13 @@
         <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
 
         <div id="date-helper" class="date-helper hidden">
-          <p class="hint">נחפש תאריכים שבהם המניה נסחרה קרוב למחיר שהזנת למעלה.</p>
-          <button type="button" id="find-date-search">חפש תאריכים</button>
+          <p class="hint">
+            הזן את השנה בקירוב אם אתה זוכר אותה — זה גם מדייק את התוצאות וגם מהיר משמעותית מחיפוש על פני 10 שנים.
+          </p>
+          <div class="date-helper-row">
+            <input type="number" id="date-helper-year" placeholder="שנה (אופציונלי, למשל 2023)" min="1980" />
+            <button type="button" id="find-date-search">חפש תאריכים</button>
+          </div>
           <ul id="date-helper-results" class="date-chip-list"></ul>
         </div>
 
@@ -86,22 +97,10 @@
     </section>
 
     <section class="panel">
-      <h2>תשלומי דיבידנד</h2>
-      <p class="hint">
-        תשלומי דיבידנד נשלפים אוטומטית מהיסטוריית המניה בכל פעם שמוסיפים או מעדכנים מניה.
-        התשלום הבא מוערך לפי הקצב וההיקף של התשלומים האחרונים.
-      </p>
-      <button type="button" id="sync-dividends-btn">רענן דיבידנדים לכל המניות</button>
-      <p id="sync-status" class="hint"></p>
-
-      <h3>צפויים</h3>
-      <ul id="upcoming-list" class="payment-list"></ul>
-
-      <h3>כל התשלומים</h3>
-      <ul id="all-payments-list" class="payment-list"></ul>
-
+      <h2>הוספת דיבידנד ידנית</h2>
+      <p class="hint">משתמשים בזה רק אם החיפוש האוטומטי לא מצא נתונים למניה מסוימת.</p>
       <details>
-        <summary class="link-btn">הוספה ידנית (אם לא נמצא אוטומטית)</summary>
+        <summary class="link-btn">הצג טופס הוספה ידנית</summary>
         <form id="dividend-form" class="inline-form">
           <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
           <select name="market">

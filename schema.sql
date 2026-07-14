@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS dividend_payments (
   shares_at_payment REAL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dividend_ticker_date ON dividend_payments(ticker, payment_date);
+
 CREATE TABLE IF NOT EXISTS quote_cache (
   ticker TEXT PRIMARY KEY,
   price REAL NOT NULL,

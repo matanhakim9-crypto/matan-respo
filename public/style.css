@@ -1,12 +1,17 @@
 :root {
-  --green: #16a34a;
-  --green-dark: #15803d;
-  --red: #dc2626;
-  --bg: #f5f6f8;
-  --card-bg: #ffffff;
-  --text: #1a1a1a;
-  --muted: #6b7280;
-  --border: #e5e7eb;
+  --green: #22c55e;
+  --green-dark: #16a34a;
+  --green-soft: rgba(34, 197, 94, 0.15);
+  --red: #f87171;
+  --red-soft: rgba(248, 113, 113, 0.15);
+  --amber: #fbbf24;
+  --amber-soft: rgba(251, 191, 36, 0.15);
+  --bg: #0b0d12;
+  --card-bg: #161a22;
+  --card-bg-alt: #1e2430;
+  --text: #e8eaed;
+  --muted: #8b93a1;
+  --border: #262c38;
 }
 
 * { box-sizing: border-box; }
@@ -20,19 +25,21 @@ body {
 }
 
 .app-header {
-  background: var(--green);
+  background: linear-gradient(135deg, #14532d, #166534);
   color: white;
   padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-top, 0px));
   padding-top: max(1.25rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
+  letter-spacing: -0.01em;
 }
 
 main {
-  max-width: 720px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 1rem;
 }
@@ -40,54 +47,73 @@ main {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
+  gap: 0.7rem;
   margin-bottom: 1.5rem;
 }
 
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.9rem;
+  border-radius: 14px;
+  padding: 0.95rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
 .card-label {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
 .card-value {
-  font-size: 1.25rem;
+  font-size: 1.3rem;
   font-weight: 700;
+  color: var(--text);
 }
 
-.card-value.positive { color: var(--green-dark); }
+.card-value.positive { color: var(--green); }
 .card-value.negative { color: var(--red); }
 
 .panel {
   background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
+  border-radius: 14px;
+  padding: 1.1rem;
   margin-bottom: 1.25rem;
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .panel h2 {
-  margin-top: 0;
+  margin: 0 0 0.15rem;
   font-size: 1.05rem;
+  color: var(--text);
 }
 
 .panel h3 {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--muted);
   margin: 1rem 0 0.5rem;
 }
 
+.hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .table-wrap {
   overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
 }
 
 table {
@@ -97,7 +123,7 @@ table {
 }
 
 th, td {
-  padding: 0.5rem;
+  padding: 0.6rem 0.65rem;
   text-align: right;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -106,6 +132,119 @@ th, td {
 th {
   color: var(--muted);
   font-weight: 600;
+  background: var(--card-bg-alt);
+  font-size: 0.78rem;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.holding-row {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.holding-row:hover {
+  background: var(--card-bg-alt);
+}
+
+.holding-row.expanded {
+  background: var(--card-bg-alt);
+}
+
+.expand-arrow {
+  display: inline-block;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+  margin-inline-end: 0.15rem;
+}
+
+.holding-row.expanded .expand-arrow {
+  transform: rotate(90deg);
+}
+
+.dividend-detail-row td {
+  background: var(--bg);
+  white-space: normal;
+  padding: 0.85rem;
+}
+
+.stock-dividend-summary {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
+.stock-dividend-summary strong {
+  color: var(--text);
+}
+
+.stock-dividend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.stock-dividend-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+.div-date {
+  color: var(--muted);
+  min-width: 5.5rem;
+}
+
+.div-amount {
+  font-weight: 600;
+  flex: 1;
+}
+
+.market-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.market-badge.market-US {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.market-badge.market-IL {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status-badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.status-badge.status-paid {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.status-badge.status-expected {
+  background: var(--amber-soft);
+  color: var(--amber);
 }
 
 .inline-form {
@@ -117,77 +256,62 @@ th {
 
 .inline-form input,
 .inline-form select {
-  flex: 1 1 120px;
-  padding: 0.55rem;
+  flex: 1 1 130px;
+  padding: 0.6rem 0.65rem;
+  background: var(--card-bg-alt);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  color: var(--text);
+  border-radius: 9px;
   font-size: 0.9rem;
 }
 
-.inline-form button {
+.inline-form input::placeholder {
+  color: var(--muted);
+}
+
+.inline-form input:focus,
+.inline-form select:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+.inline-form button[type="submit"] {
   flex: 1 1 100%;
-  padding: 0.65rem;
+  padding: 0.7rem;
   background: var(--green);
-  color: white;
+  color: #06210f;
   border: none;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 0.95rem;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.inline-form button:active {
+.inline-form button[type="submit"]:active {
   background: var(--green-dark);
 }
 
-.payment-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.payment-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.6rem 0.75rem;
+#sync-dividends-btn {
+  padding: 0.5rem 0.85rem;
+  background: var(--card-bg-alt);
+  color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.85rem;
-}
-
-.payment-list .status-paid {
-  color: var(--green-dark);
-  font-weight: 600;
-}
-
-.payment-list .status-expected {
-  color: var(--muted);
-}
-
-.delete-btn {
-  background: none;
-  border: none;
-  color: var(--red);
+  border-radius: 9px;
+  font-size: 0.82rem;
   cursor: pointer;
-  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
-.empty {
-  color: var(--muted);
-  font-size: 0.85rem;
-  padding: 0.5rem 0;
+#sync-dividends-btn:active {
+  border-color: var(--green);
 }
 
 .link-btn {
   flex: 1 1 100%;
   background: none;
   border: none;
-  color: var(--green-dark);
+  color: var(--green);
   font-size: 0.82rem;
-  text-decoration: underline;
   cursor: pointer;
   padding: 0.2rem 0;
   text-align: right;
@@ -195,29 +319,34 @@ th {
 
 .date-helper {
   flex: 1 1 100%;
-  background: var(--bg);
+  background: var(--card-bg-alt);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.65rem;
+  border-radius: 10px;
+  padding: 0.7rem;
 }
 
 .hidden {
   display: none !important;
 }
 
-.hint {
-  margin: 0 0 0.5rem;
-  font-size: 0.8rem;
-  color: var(--muted);
+.date-helper-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.date-helper-row input {
+  flex: 1 1 auto;
 }
 
 .date-helper button#find-date-search {
-  padding: 0.5rem 0.75rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.9rem;
   background: var(--green);
-  color: white;
+  color: #06210f;
   border: none;
   border-radius: 8px;
   font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -231,9 +360,10 @@ th {
 }
 
 .date-chip {
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.65rem;
   background: var(--card-bg);
   border: 1px solid var(--border);
+  color: var(--text);
   border-radius: 999px;
   font-size: 0.78rem;
   cursor: pointer;
@@ -241,7 +371,7 @@ th {
 
 .date-chip:active {
   background: var(--green);
-  color: white;
+  color: #06210f;
   border-color: var(--green);
 }
 
@@ -257,24 +387,31 @@ th {
   border: none;
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.85rem;
-  margin-inline-end: 0.4rem;
+  font-size: 0.82rem;
+  margin-inline-end: 0.5rem;
 }
 
-#sync-dividends-btn {
-  padding: 0.5rem 0.75rem;
-  background: var(--green);
-  color: white;
+.edit-btn:hover {
+  color: var(--text);
+}
+
+.delete-btn {
+  background: none;
   border: none;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  color: var(--red);
   cursor: pointer;
-  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
 }
 
 details summary {
   cursor: pointer;
-  margin-top: 1rem;
+  list-style: none;
 }
 
 details summary::-webkit-details-marker {
