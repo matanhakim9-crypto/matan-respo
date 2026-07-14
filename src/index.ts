@@ -370,13 +370,64 @@ async function findHistoricalDates(ticker: string, targetPrice: number, year?: n
 
 type DivPoint = { date: string; amount: number };
 
+// Yahoo's dividend-events feed only exposes the ex-dividend date, not the
+// date cash actually lands. NASDAQ's public dividend-history endpoint
+// carries both, so US tickers are enriched with it on a best-effort basis;
+// any failure (blocked request, unexpected shape, no match) silently falls
+// back to the ex-dividend date already in `points`.
+function parseUsDate(s: string | undefined | null): string | null {
+  if (!s) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s.trim());
+  if (!m) return null;
+  const [, mm, dd, yyyy] = m;
+  return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+}
+
+async function fetchNasdaqPaymentDates(symbol: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/dividends?assetclass=stocks`;
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': YAHOO_HEADERS['User-Agent'],
+        Accept: 'application/json, text/plain, */*',
+        Origin: 'https://www.nasdaq.com',
+        Referer: 'https://www.nasdaq.com/',
+      },
+    });
+    if (!res.ok) return map;
+    const data = await res.json<any>();
+    const rows = data?.data?.dividends?.rows;
+    if (!Array.isArray(rows)) return map;
+    for (const row of rows) {
+      const exDate = parseUsDate(row?.exOrEffDate);
+      const payDate = parseUsDate(row?.paymentDate);
+      if (exDate && payDate) map.set(exDate, payDate);
+    }
+  } catch {
+    // best-effort only
+  }
+  return map;
+}
+
 async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
   const result = await fetchYahooChart(ticker, { range: '10y' }, 'div');
   const raw = result?.events?.dividends;
   if (!raw) return [];
-  return Object.values(raw as Record<string, { amount: number; date: number }>)
+  const points = Object.values(raw as Record<string, { amount: number; date: number }>)
     .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
     .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!ticker.endsWith('.TA')) {
+    const paymentDates = await fetchNasdaqPaymentDates(ticker);
+    if (paymentDates.size > 0) {
+      return points
+        .map((p) => ({ ...p, date: paymentDates.get(p.date) ?? p.date }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+  }
+
+  return points;
 }
 
 // Companies usually keep a steady per-share amount and cadence between
