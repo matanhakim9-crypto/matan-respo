@@ -554,6 +554,20 @@ main {
   border-color: var(--green);
 }
 
+/* Native date inputs render with the OS's own chrome (ignoring background
+   and border) unless appearance is reset — this makes it match the other
+   fields instead of looking like a plain unstyled box. */
+.field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+}
+
+.field input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.4);
+  cursor: pointer;
+}
+
 .stock-form button[type="submit"] {
   width: 100%;
   padding: 0.8rem;
