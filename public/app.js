@@ -1,8 +1,9 @@
-const fmtMoney = (n) =>
-  new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n ?? 0);
+const fmtMoney = (n, currency = 'ILS') =>
+  new Intl.NumberFormat('he-IL', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n ?? 0);
 
 const fmtPct = (n) => `${(n ?? 0).toFixed(2)}%`;
 const fmtDate = (d) => new Date(d).toLocaleDateString('he-IL');
+const currencyForTicker = (ticker) => (ticker.endsWith('.TA') ? 'ILS' : 'USD');
 
 async function api(path, options) {
   const res = await fetch(path, {
@@ -40,13 +41,14 @@ function renderHoldings(holdings) {
     return;
   }
   for (const h of holdings) {
+    const currency = h.currency ?? currencyForTicker(h.ticker);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${h.ticker}</td>
+      <td>${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}</td>
       <td>${h.shares}</td>
-      <td>${fmtMoney(h.amount_invested)}</td>
-      <td>${h.currentPrice != null ? fmtMoney(h.currentPrice) : '—'}</td>
-      <td>${fmtMoney(h.currentValue)}</td>
+      <td>${h.currentPrice != null ? fmtMoney(h.currentPrice, currency) : '—'}</td>
+      <td>${fmtMoney(h.currentValue, currency)}</td>
       <td><button class="delete-btn" data-id="${h.id}" data-type="holding">מחק</button></td>
     `;
     body.appendChild(tr);
@@ -70,12 +72,13 @@ function renderPaymentList(elementId, payments, emptyMessage) {
     return;
   }
   for (const p of payments) {
+    const currency = currencyForTicker(p.ticker);
     const total = p.shares_at_payment ? p.amount_per_share * p.shares_at_payment : null;
     const li = document.createElement('li');
     li.innerHTML = `
       <span>
         <strong>${p.ticker}</strong> · ${fmtDate(p.payment_date)} ·
-        ${fmtMoney(p.amount_per_share)}/מניה${total != null ? ` · סה"כ ${fmtMoney(total)}` : ''}
+        ${fmtMoney(p.amount_per_share, currency)}/מניה${total != null ? ` · סה"כ ${fmtMoney(total, currency)}` : ''}
         <span class="status-${p.status}"> (${p.status === 'paid' ? 'שולם' : 'צפוי'})</span>
       </span>
       <button class="delete-btn" data-id="${p.id}" data-type="dividend">מחק</button>
@@ -96,12 +99,14 @@ document.getElementById('holding-form').addEventListener('submit', async (e) => 
     method: 'POST',
     body: JSON.stringify({
       ticker: data.ticker,
+      market: data.market,
       shares: parseFloat(data.shares),
-      amount_invested: parseFloat(data.amount_invested),
+      purchase_price: parseFloat(data.purchase_price),
       purchase_date: data.purchase_date || null,
     }),
   });
   form.reset();
+  document.getElementById('date-helper').classList.add('hidden');
   await refreshAll();
 });
 
@@ -113,6 +118,7 @@ document.getElementById('dividend-form').addEventListener('submit', async (e) =>
     method: 'POST',
     body: JSON.stringify({
       ticker: data.ticker,
+      market: data.market,
       amount_per_share: parseFloat(data.amount_per_share),
       shares_at_payment: data.shares_at_payment ? parseFloat(data.shares_at_payment) : null,
       payment_date: data.payment_date,
@@ -121,6 +127,55 @@ document.getElementById('dividend-form').addEventListener('submit', async (e) =>
   });
   form.reset();
   await refreshAll();
+});
+
+// ---- "Don't remember the purchase date? search by price" helper ----
+
+const holdingForm = document.getElementById('holding-form');
+const dateHelper = document.getElementById('date-helper');
+
+document.getElementById('find-date-toggle').addEventListener('click', () => {
+  dateHelper.classList.toggle('hidden');
+});
+
+document.getElementById('find-date-search').addEventListener('click', async () => {
+  const results = document.getElementById('date-helper-results');
+  const ticker = holdingForm.ticker.value.trim();
+  const market = holdingForm.market.value;
+  const price = parseFloat(holdingForm.purchase_price.value);
+
+  if (!ticker || !price) {
+    results.innerHTML = '<li class="empty">קודם מלא טיקר ומחיר למעלה</li>';
+    return;
+  }
+
+  results.innerHTML = '<li class="empty">מחפש…</li>';
+  try {
+    const { matches } = await api(
+      `/api/history/${encodeURIComponent(ticker)}?market=${market}&price=${price}`
+    );
+    if (!matches || matches.length === 0) {
+      results.innerHTML = '<li class="empty">לא נמצאו תאריכים במחיר הזה, נסה מחיר אחר</li>';
+      return;
+    }
+    results.innerHTML = '';
+    const currency = market === 'IL' ? 'ILS' : 'USD';
+    for (const m of matches) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'date-chip';
+      btn.textContent = `${fmtDate(m.date)} · ${fmtMoney(m.price, currency)}`;
+      btn.addEventListener('click', () => {
+        document.getElementById('purchase-date-input').value = m.date;
+        dateHelper.classList.add('hidden');
+      });
+      li.appendChild(btn);
+      results.appendChild(li);
+    }
+  } catch (err) {
+    results.innerHTML = `<li class="empty">שגיאה בחיפוש: ${err.message}</li>`;
+  }
 });
 
 document.addEventListener('click', async (e) => {

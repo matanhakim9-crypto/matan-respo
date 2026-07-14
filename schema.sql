@@ -1,7 +1,9 @@
 CREATE TABLE IF NOT EXISTS holdings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ticker TEXT NOT NULL,
+  market TEXT NOT NULL DEFAULT 'US',
   shares REAL NOT NULL,
+  purchase_price REAL NOT NULL,
   amount_invested REAL NOT NULL,
   purchase_date TEXT,
   notes TEXT

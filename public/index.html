@@ -50,8 +50,8 @@
           <thead>
             <tr>
               <th>טיקר</th>
+              <th>שוק</th>
               <th>מניות</th>
-              <th>הושקע</th>
               <th>מחיר נוכחי</th>
               <th>שווי</th>
               <th></th>
@@ -62,10 +62,22 @@
       </div>
 
       <form id="holding-form" class="inline-form">
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="10" />
+        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
+        <select name="market">
+          <option value="US">ארה"ב</option>
+          <option value="IL">ישראל (ת"א)</option>
+        </select>
         <input name="shares" type="number" step="any" min="0" placeholder="כמות מניות" required />
-        <input name="amount_invested" type="number" step="any" min="0" placeholder="סכום שהושקע (₪/$)" required />
-        <input name="purchase_date" type="date" />
+        <input name="purchase_price" type="number" step="any" min="0" placeholder="מחיר למניה בקנייה" required />
+        <input name="purchase_date" type="date" id="purchase-date-input" />
+        <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
+
+        <div id="date-helper" class="date-helper hidden">
+          <p class="hint">נחפש תאריכים שבהם המניה נסחרה קרוב למחיר שהזנת למעלה.</p>
+          <button type="button" id="find-date-search">חפש תאריכים</button>
+          <ul id="date-helper-results" class="date-chip-list"></ul>
+        </div>
+
         <button type="submit">הוסף מניה</button>
       </form>
     </section>
@@ -78,7 +90,11 @@
       <ul id="all-payments-list" class="payment-list"></ul>
 
       <form id="dividend-form" class="inline-form">
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="10" />
+        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="12" />
+        <select name="market">
+          <option value="US">ארה"ב</option>
+          <option value="IL">ישראל (ת"א)</option>
+        </select>
         <input name="amount_per_share" type="number" step="any" min="0" placeholder="סכום למניה" required />
         <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
         <input name="payment_date" type="date" required />
