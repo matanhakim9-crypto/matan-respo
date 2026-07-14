@@ -56,6 +56,14 @@ function renderHoldings(holdings) {
     const currency = h.currency ?? currencyForTicker(h.ticker);
     const gainPct = h.gainPct ?? 0;
     const gainSign = gainPct >= 0 ? '+' : '';
+
+    // Purchase price stays in Agorot (matches how it's entered), but the
+    // live price/value columns read easier in Shekels for Israeli stocks.
+    const isIL = currency === 'ILA';
+    const displayCurrency = isIL ? 'ILS' : currency;
+    const displayPrice = isIL && h.currentPrice != null ? h.currentPrice / 100 : h.currentPrice;
+    const displayValue = isIL ? h.currentValue / 100 : h.currentValue;
+
     const tr = document.createElement('tr');
     tr.className = 'holding-row';
     tr.dataset.holdingId = h.id;
@@ -63,8 +71,8 @@ function renderHoldings(holdings) {
       <td><span class="expand-arrow">▸</span> ${h.ticker}</td>
       <td><span class="market-badge market-${h.market}">${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}</span></td>
       <td>${h.shares}</td>
-      <td>${h.currentPrice != null ? fmtMoney(h.currentPrice, currency) : '—'}</td>
-      <td>${fmtMoney(h.currentValue, currency)}</td>
+      <td>${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
+      <td>${fmtMoney(displayValue, displayCurrency)}</td>
       <td class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
       <td>
         <button class="edit-btn" data-id="${h.id}">ערוך</button>
