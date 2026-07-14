@@ -10,6 +10,7 @@ type Holding = {
   id: number;
   ticker: string;
   market: Market;
+  company_name: string | null;
   shares: number;
   purchase_price: number;
   amount_invested: number;
@@ -423,7 +424,7 @@ app.get('/api/holdings', async (c) => {
 
 app.post('/api/holdings', async (c) => {
   const body = await c.req.json<Partial<Holding> & { market?: string }>();
-  const { ticker, shares, purchase_price, purchase_date, notes } = body;
+  const { ticker, shares, purchase_price, purchase_date, notes, company_name } = body;
   const market: Market = body.market === 'IL' ? 'IL' : 'US';
   if (!ticker || !shares || !purchase_price) {
     return c.json({ error: 'ticker, shares and purchase_price are required' }, 400);
@@ -431,9 +432,9 @@ app.post('/api/holdings', async (c) => {
   const normalizedTicker = normalizeTicker(ticker, market);
   const amount_invested = shares * purchase_price;
   const result = await c.env.DB.prepare(
-    `INSERT INTO holdings (ticker, market, shares, purchase_price, amount_invested, purchase_date, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).bind(normalizedTicker, market, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
+    `INSERT INTO holdings (ticker, market, company_name, shares, purchase_price, amount_invested, purchase_date, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(normalizedTicker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
 
   // Runs after the response is sent so adding a holding feels instant;
   // dividend history shows up moments later on the next refresh.
@@ -454,6 +455,7 @@ app.patch('/api/holdings/:id', async (c) => {
   const ticker = body.ticker ? normalizeTicker(body.ticker, market) : existing.ticker;
   const purchase_date = body.purchase_date !== undefined ? body.purchase_date : existing.purchase_date;
   const notes = body.notes !== undefined ? body.notes : existing.notes;
+  const company_name = body.company_name !== undefined ? body.company_name : existing.company_name;
 
   if (!ticker || !shares || !purchase_price) {
     return c.json({ error: 'ticker, shares and purchase_price are required' }, 400);
@@ -461,9 +463,9 @@ app.patch('/api/holdings/:id', async (c) => {
   const amount_invested = shares * purchase_price;
 
   await c.env.DB.prepare(
-    `UPDATE holdings SET ticker = ?, market = ?, shares = ?, purchase_price = ?, amount_invested = ?, purchase_date = ?, notes = ?
+    `UPDATE holdings SET ticker = ?, market = ?, company_name = ?, shares = ?, purchase_price = ?, amount_invested = ?, purchase_date = ?, notes = ?
      WHERE id = ?`
-  ).bind(ticker, market, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
+  ).bind(ticker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
 
   c.executionCtx.waitUntil(syncDividendsForHolding(c.env, ticker, shares).catch(() => {}));
 

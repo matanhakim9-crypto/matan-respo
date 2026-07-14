@@ -73,14 +73,25 @@ function renderHoldings(holdings) {
     const displayCurrency = isIL ? 'ILS' : currency;
     const displayValue = isIL ? h.currentValue / 100 : h.currentValue;
 
+    // Israeli stocks show the company name front and center (more
+    // recognizable to a Hebrew-reading user than a TASE ticker symbol);
+    // the ticker moves into the secondary line instead.
+    const bareTicker = h.ticker.replace('.TA', '');
+    const showCompanyName = h.market === 'IL' && h.company_name;
+    const primaryLabel = showCompanyName ? h.company_name : bareTicker;
+    const subParts = [];
+    if (showCompanyName) subParts.push(bareTicker);
+    subParts.push(`${h.shares} מניות`);
+    subParts.push(`תשואת דיב' ${yieldPct.toFixed(1)}%`);
+
     const row = document.createElement('div');
     row.className = 'holding-row';
     row.dataset.holdingId = h.id;
     row.innerHTML = `
       <div class="holding-avatar" style="background:${avatarColor(h.ticker)}">${avatarInitials(h.ticker)}</div>
       <div class="holding-id-block">
-        <div class="holding-ticker">${h.ticker.replace('.TA', '')} <span class="market-flag">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span></div>
-        <div class="holding-sub">${h.shares} מניות · תשואת דיב' ${yieldPct.toFixed(1)}%</div>
+        <div class="holding-ticker">${primaryLabel} <span class="market-flag">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span></div>
+        <div class="holding-sub">${subParts.join(' · ')}</div>
       </div>
       <div class="holding-value-block">
         <div class="holding-value">${fmtMoney(displayValue, displayCurrency)}</div>
@@ -204,6 +215,7 @@ const holdingCancelEditBtn = document.getElementById('holding-cancel-edit');
 const dateHelper = document.getElementById('date-helper');
 const tickerInput = document.getElementById('holding-ticker-input');
 const marketInput = document.getElementById('holding-market-input');
+const companyNameInput = document.getElementById('holding-company-name-input');
 const suggestionsList = document.getElementById('ticker-suggestions');
 const resolvedText = document.getElementById('ticker-resolved');
 
@@ -270,6 +282,7 @@ suggestionsList.addEventListener('click', (e) => {
   const { symbol, market, name } = li.dataset;
   tickerInput.value = symbol;
   marketInput.value = market;
+  companyNameInput.value = name;
   resolvedViaSearch = true;
   updateHoldingPriceUnit();
   resolvedText.textContent = `נבחר: ${name} (${market === 'IL' ? 'ת"א' : 'ארה"ב'})`;
@@ -285,6 +298,7 @@ function exitEditMode() {
   holdingForm.reset();
   holdingEditIdInput.value = '';
   marketInput.value = 'US';
+  companyNameInput.value = '';
   resolvedViaSearch = false;
   resolvedText.classList.add('hidden');
   updateHoldingPriceUnit();
@@ -310,6 +324,7 @@ holdingForm.addEventListener('submit', async (e) => {
   const payload = {
     ticker: data.ticker,
     market: data.market,
+    company_name: data.company_name || null,
     shares: parseFloat(data.shares),
     purchase_price: parseFloat(data.purchase_price),
     purchase_date: data.purchase_date || null,
@@ -343,6 +358,7 @@ document.addEventListener('click', (e) => {
   holdingEditIdInput.value = holding.id;
   tickerInput.value = holding.ticker;
   marketInput.value = holding.market;
+  companyNameInput.value = holding.company_name ?? '';
   resolvedViaSearch = true;
   updateHoldingPriceUnit();
   resolvedText.classList.add('hidden');
