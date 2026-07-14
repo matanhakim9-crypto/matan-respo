@@ -204,8 +204,9 @@ async function rememberAlias(env: Bindings, query: string, suggestion: TickerSug
 // English *label* is filled in far more often than a full English article,
 // so resolve through that instead: Hebrew Wikipedia search -> its Wikidata
 // item -> that item's English label -> fed into the same Yahoo search used
-// for English queries.
-async function resolveEnglishNameViaWikipedia(query: string): Promise<string | null> {
+// for English queries. The Hebrew Wikipedia article's own title is kept too,
+// so results can be labeled in Hebrew instead of Yahoo's English name.
+async function resolveViaWikipedia(query: string): Promise<{ hebrewName: string; englishName: string } | null> {
   try {
     const searchUrl = `https://he.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=pageprops&ppprop=wikibase_item`;
     const searchRes = await fetch(searchUrl, { headers: YAHOO_HEADERS });
@@ -214,15 +215,16 @@ async function resolveEnglishNameViaWikipedia(query: string): Promise<string | n
     const pages = searchData?.query?.pages;
     if (!pages) return null;
     const page = Object.values(pages)[0] as any;
+    const hebrewName = page?.title;
     const qid = page?.pageprops?.wikibase_item;
-    if (typeof qid !== 'string') return null;
+    if (typeof hebrewName !== 'string' || typeof qid !== 'string') return null;
 
     const entityUrl = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${qid}&props=labels&languages=en&format=json`;
     const entityRes = await fetch(entityUrl, { headers: YAHOO_HEADERS });
     if (!entityRes.ok) return null;
     const entityData = await entityRes.json<any>();
-    const label = entityData?.entities?.[qid]?.labels?.en?.value;
-    return typeof label === 'string' ? label : null;
+    const englishName = entityData?.entities?.[qid]?.labels?.en?.value;
+    return typeof englishName === 'string' ? { hebrewName, englishName } : null;
   } catch {
     return null;
   }
@@ -269,8 +271,16 @@ async function searchTickers(env: Bindings, query: string): Promise<TickerSugges
 
   const isHebrew = /[֐-׿]/.test(query);
   if (isHebrew) {
-    const englishName = await resolveEnglishNameViaWikipedia(query);
-    if (englishName) await searchYahoo(englishName, results);
+    const resolved = await resolveViaWikipedia(query);
+    if (resolved) {
+      const beforeWikipediaSearch = results.length;
+      await searchYahoo(resolved.englishName, results);
+      // Yahoo's own name for the match is in English; the Hebrew Wikipedia
+      // article title is the more useful label to show the user.
+      for (const r of results.slice(beforeWikipediaSearch)) {
+        if (r.market === 'IL') r.name = resolved.hebrewName;
+      }
+    }
   }
 
   // Remember anything newly discovered via a live Hebrew search so the next
