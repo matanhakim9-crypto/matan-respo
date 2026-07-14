@@ -313,21 +313,6 @@ app.get('/api/summary', async (c) => {
   const { results: holdings } = await c.env.DB.prepare('SELECT * FROM holdings').all<Holding>();
   const fxRate = await getUsdIlsRate(c.env);
 
-  let totalInvested = 0;
-  let currentValue = 0;
-  const holdingsWithPrice = [];
-  for (const h of holdings) {
-    const currency = currencyForTicker(h.ticker);
-    const toILS = toILSFactor(currency, fxRate);
-    const price = await getQuote(c.env, h.ticker);
-    const nativeValue = (price ?? 0) * h.shares;
-
-    currentValue += nativeValue * toILS;
-    totalInvested += h.amount_invested * toILS;
-    const gainPct = h.amount_invested > 0 ? ((nativeValue - h.amount_invested) / h.amount_invested) * 100 : 0;
-    holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue, gainPct });
-  }
-
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   // Only count dividends paid on/after each stock's purchase date — otherwise
@@ -340,6 +325,30 @@ app.get('/api/summary', async (c) => {
      WHERE dp.status = 'paid' AND dp.payment_date >= ?
        AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)`
   ).bind(oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
+
+  const dividendIncomeByTicker = new Map<string, number>();
+  for (const p of paidLastYear) {
+    const amount = p.amount_per_share * (p.shares_at_payment ?? 0);
+    dividendIncomeByTicker.set(p.ticker, (dividendIncomeByTicker.get(p.ticker) ?? 0) + amount);
+  }
+
+  let totalInvested = 0;
+  let currentValue = 0;
+  const holdingsWithPrice = [];
+  for (const h of holdings) {
+    const currency = currencyForTicker(h.ticker);
+    const toILS = toILSFactor(currency, fxRate);
+    const price = await getQuote(c.env, h.ticker);
+    const nativeValue = (price ?? 0) * h.shares;
+
+    currentValue += nativeValue * toILS;
+    totalInvested += h.amount_invested * toILS;
+    const gainPct = h.amount_invested > 0 ? ((nativeValue - h.amount_invested) / h.amount_invested) * 100 : 0;
+    // Trailing-12-month dividend income relative to cost basis (yield on cost).
+    const stockDividendIncome = dividendIncomeByTicker.get(h.ticker) ?? 0;
+    const dividendYieldPct = h.amount_invested > 0 ? (stockDividendIncome / h.amount_invested) * 100 : 0;
+    holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue, gainPct, dividendYieldPct });
+  }
 
   const annualDividendIncome = paidLastYear.reduce((sum, p) => {
     const toILS = toILSFactor(currencyForTicker(p.ticker), fxRate);

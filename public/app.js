@@ -49,13 +49,14 @@ function renderHoldings(holdings) {
   const body = document.getElementById('holdings-body');
   body.innerHTML = '';
   if (holdings.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">עדיין אין מניות בתיק</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">עדיין אין מניות בתיק</td></tr>';
     return;
   }
   for (const h of holdings) {
     const currency = h.currency ?? currencyForTicker(h.ticker);
     const gainPct = h.gainPct ?? 0;
     const gainSign = gainPct >= 0 ? '+' : '';
+    const yieldPct = h.dividendYieldPct ?? 0;
 
     // Purchase price stays in Agorot (matches how it's entered), but the
     // live price/value columns read easier in Shekels for Israeli stocks.
@@ -74,6 +75,7 @@ function renderHoldings(holdings) {
       <td>${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
       <td>${fmtMoney(displayValue, displayCurrency)}</td>
       <td class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
+      <td>${yieldPct.toFixed(1)}%</td>
       <td>
         <button class="edit-btn" data-id="${h.id}">ערוך</button>
         <button class="delete-btn" data-id="${h.id}">מחק</button>
@@ -99,7 +101,7 @@ function buildDividendDetailRow(holding) {
   const tr = document.createElement('tr');
   tr.className = 'dividend-detail-row';
   const td = document.createElement('td');
-  td.colSpan = 7;
+  td.colSpan = 8;
 
   if (payments.length === 0) {
     td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
@@ -108,22 +110,23 @@ function buildDividendDetailRow(holding) {
     const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
     td.innerHTML = `
       <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(toDisplay(total), displayCurrency)}</strong></div>
-      <div class="stock-dividend-table-wrap">
-        <table class="stock-dividend-table">
-          <thead>
-            <tr><th>תאריך</th><th>סה"כ</th><th>למניה</th><th>סטטוס</th></tr>
-          </thead>
-          <tbody>
-            ${payments.map((p) => `
-              <tr class="${p.status === 'expected' ? 'is-expected' : ''}">
-                <td>${fmtDate(p.payment_date)}</td>
-                <td class="div-amount">${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</td>
-                <td class="div-rate">${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</td>
-                <td><span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div class="dividend-card-list">
+        ${payments.map((p) => `
+          <div class="dividend-card ${p.status === 'expected' ? 'is-expected' : ''}">
+            <div class="dividend-card-head">
+              <span class="dividend-card-date">${fmtDate(p.payment_date)}</span>
+              <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
+            </div>
+            <div class="dividend-card-row">
+              <span>סה"כ</span>
+              <strong>${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</strong>
+            </div>
+            <div class="dividend-card-row">
+              <span>למניה</span>
+              <span>${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</span>
+            </div>
+          </div>
+        `).join('')}
       </div>
     `;
   }
