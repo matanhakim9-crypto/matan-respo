@@ -27,7 +27,8 @@ async function loadSummary() {
   document.getElementById('s-current').textContent = fmtMoney(s.currentValue);
 
   const gainEl = document.getElementById('s-gain');
-  gainEl.textContent = fmtMoney(s.gainLoss);
+  const gainSign = s.gainLossPct >= 0 ? '+' : '';
+  gainEl.textContent = `${fmtMoney(s.gainLoss)} (${gainSign}${(s.gainLossPct ?? 0).toFixed(1)}%)`;
   gainEl.classList.toggle('positive', s.gainLoss >= 0);
   gainEl.classList.toggle('negative', s.gainLoss < 0);
 
@@ -83,16 +84,16 @@ function buildDividendDetailRow(holding) {
   if (payments.length === 0) {
     td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
   } else {
-    const total = payments
-      .filter((p) => p.status === 'paid')
-      .reduce((sum, p) => sum + p.amount_per_share * (p.shares_at_payment ?? 0), 0);
+    const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? holding.shares);
+    const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
     td.innerHTML = `
       <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(total, currency)}</strong></div>
       <ul class="stock-dividend-list">
         ${payments.map((p) => `
           <li>
             <span class="div-date">${fmtDate(p.payment_date)}</span>
-            <span class="div-amount">${fmtMoney(p.amount_per_share, currency)}/מניה</span>
+            <span class="div-amount">${fmtMoney(totalFor(p), currency)}</span>
+            <span class="div-rate">${fmtMoney(p.amount_per_share, currency)}/מניה</span>
             <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
           </li>
         `).join('')}
@@ -276,6 +277,49 @@ document.getElementById('dividend-form').addEventListener('submit', async (e) =>
     await refreshAll();
   } catch (err) {
     showError('dividend-error', err);
+  }
+});
+
+// ---- Dividend income growth (month over month, year over year) ----
+
+const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+
+function fmtMonthLabel(period) {
+  const [y, m] = period.split('-');
+  return `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function renderGrowthTable(tableId, series, labelFn) {
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  tbody.innerHTML = '';
+  if (series.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty">אין עדיין נתונים</td></tr>';
+    return;
+  }
+  for (const row of [...series].reverse()) {
+    const tr = document.createElement('tr');
+    const growthText = row.growthPct == null ? '—' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(1)}%`;
+    const growthClass = row.growthPct == null ? '' : row.growthPct >= 0 ? 'positive' : 'negative';
+    tr.innerHTML = `
+      <td>${labelFn(row.period)}</td>
+      <td>${fmtMoney(row.total)}</td>
+      <td class="${growthClass}">${growthText}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+const growthTables = document.getElementById('growth-tables');
+document.getElementById('growth-toggle').addEventListener('click', async () => {
+  growthTables.classList.toggle('hidden');
+  if (growthTables.classList.contains('hidden') || growthTables.dataset.loaded) return;
+  try {
+    const { monthly, yearly } = await api('/api/dividends/income-growth');
+    renderGrowthTable('growth-monthly-table', monthly, fmtMonthLabel);
+    renderGrowthTable('growth-yearly-table', yearly, (p) => p);
+    growthTables.dataset.loaded = '1';
+  } catch (err) {
+    growthTables.innerHTML = `<p class="empty">שגיאה: ${err.message}</p>`;
   }
 });
 

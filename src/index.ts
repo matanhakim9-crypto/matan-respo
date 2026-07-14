@@ -379,17 +379,52 @@ app.get('/api/summary', async (c) => {
 
   const annualYieldPct = totalInvested > 0 ? (annualDividendIncome / totalInvested) * 100 : 0;
   const monthlyAvgIncome = annualDividendIncome / 12;
+  const gainLoss = currentValue - totalInvested;
+  const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
 
   return c.json({
     totalInvested,
     currentValue,
-    gainLoss: currentValue - totalInvested,
+    gainLoss,
+    gainLossPct,
     annualDividendIncome,
     annualYieldPct,
     monthlyAvgIncome,
     fxRate,
     holdings: holdingsWithPrice,
   });
+});
+
+// ---------- Dividend income growth (month over month, year over year) ----------
+
+app.get('/api/dividends/income-growth', async (c) => {
+  const { results: paid } = await c.env.DB.prepare(
+    "SELECT ticker, amount_per_share, payment_date, shares_at_payment FROM dividend_payments WHERE status = 'paid' ORDER BY payment_date"
+  ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
+  const fxRate = await getUsdIlsRate(c.env);
+
+  const byMonth = new Map<string, number>();
+  const byYear = new Map<string, number>();
+  for (const p of paid) {
+    const toILS = currencyForTicker(p.ticker) === 'USD' ? fxRate : 1;
+    const amountILS = p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
+    const month = p.payment_date.slice(0, 7);
+    const year = p.payment_date.slice(0, 4);
+    byMonth.set(month, (byMonth.get(month) ?? 0) + amountILS);
+    byYear.set(year, (byYear.get(year) ?? 0) + amountILS);
+  }
+
+  const toSeries = (map: Map<string, number>) => {
+    const entries = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    let prev: number | null = null;
+    return entries.map(([period, total]) => {
+      const growthPct = prev != null && prev > 0 ? ((total - prev) / prev) * 100 : null;
+      prev = total;
+      return { period, total, growthPct };
+    });
+  };
+
+  return c.json({ monthly: toSeries(byMonth), yearly: toSeries(byYear) });
 });
 
 export default app;

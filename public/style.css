@@ -212,6 +212,14 @@ tr:last-child td {
   flex: 1;
 }
 
+.div-rate {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+
 .market-badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;
