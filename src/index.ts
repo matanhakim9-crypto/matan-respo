@@ -171,6 +171,48 @@ async function symbolHasQuote(ticker: string): Promise<boolean> {
   return typeof result?.meta?.regularMarketPrice === 'number';
 }
 
+// Yahoo's search barely understands Hebrew, but Hebrew Wikipedia does, and
+// its inter-language links reliably give a company's standard English name
+// (e.g. "בנק בינלאומי" -> "First International Bank of Israel"), which
+// Yahoo's search can then resolve normally. This covers far more companies
+// than the hand-curated alias list, without any signup or API key.
+async function resolveEnglishNameViaWikipedia(query: string): Promise<string | null> {
+  try {
+    const url = `https://he.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1&prop=langlinks&lllang=en&redirects=1`;
+    const res = await fetch(url, { headers: YAHOO_HEADERS });
+    if (!res.ok) return null;
+    const data = await res.json<any>();
+    const pages = data?.query?.pages;
+    if (!pages) return null;
+    const page = Object.values(pages)[0] as any;
+    const enTitle = page?.langlinks?.[0]?.['*'];
+    return typeof enTitle === 'string' ? enTitle : null;
+  } catch {
+    return null;
+  }
+}
+
+async function searchYahoo(query: string, results: TickerSuggestion[]): Promise<void> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`;
+    const res = await fetch(url, { headers: YAHOO_HEADERS });
+    if (!res.ok) return;
+    const data = await res.json<any>();
+    const quotes: any[] = data?.quotes ?? [];
+    for (const q of quotes) {
+      if (!q.symbol || (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF')) continue;
+      if (results.some((r) => r.symbol === q.symbol)) continue;
+      results.push({
+        symbol: q.symbol,
+        name: q.shortname || q.longname || q.symbol,
+        market: (q.symbol as string).endsWith('.TA') || q.exchange === 'TLV' ? 'IL' : 'US',
+      });
+    }
+  } catch {
+    // other sources (local aliases, earlier queries) still stand
+  }
+}
+
 async function searchTickers(query: string): Promise<TickerSuggestion[]> {
   const results: TickerSuggestion[] = [];
 
@@ -181,24 +223,11 @@ async function searchTickers(query: string): Promise<TickerSuggestion[]> {
     }
   }
 
-  try {
-    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`;
-    const res = await fetch(url, { headers: YAHOO_HEADERS });
-    if (res.ok) {
-      const data = await res.json<any>();
-      const quotes: any[] = data?.quotes ?? [];
-      for (const q of quotes) {
-        if (!q.symbol || (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF')) continue;
-        if (results.some((r) => r.symbol === q.symbol)) continue;
-        results.push({
-          symbol: q.symbol,
-          name: q.shortname || q.longname || q.symbol,
-          market: (q.symbol as string).endsWith('.TA') || q.exchange === 'TLV' ? 'IL' : 'US',
-        });
-      }
-    }
-  } catch {
-    // local matches (if any) still stand even if Yahoo's search fails
+  await searchYahoo(query, results);
+
+  if (/[֐-׿]/.test(query)) {
+    const englishName = await resolveEnglishNameViaWikipedia(query);
+    if (englishName) await searchYahoo(englishName, results);
   }
 
   return results.slice(0, 8);
