@@ -443,10 +443,10 @@ document.getElementById('find-date-search').addEventListener('click', async () =
 
 // ---- Dividend income growth (month over month, year over year) ----
 
-const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+const MONTH_NAMES_SHORT = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
 const fmtMonthLabel = (period) => {
   const [y, m] = period.split('-');
-  return `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
+  return `${MONTH_NAMES_SHORT[parseInt(m, 10) - 1]}׳${y.slice(2)}`;
 };
 
 let growthData = null;
@@ -462,8 +462,9 @@ function renderBarChart(series, labelFn) {
     summary.innerHTML = '';
     return;
   }
-  // Chronological, oldest to newest, capped to the last 12 periods so the chart stays scannable.
-  const recent = series.slice(-12);
+  // Chronological, oldest to newest, capped to the last 6 periods so all columns
+  // fit on a phone screen at once without needing to scroll.
+  const recent = series.slice(-6);
   const max = Math.max(...recent.map((r) => r.total), 1);
   const totalSum = recent.reduce((sum, r) => sum + r.total, 0);
   const avg = totalSum / recent.length;
@@ -496,7 +497,6 @@ function renderBarChart(series, labelFn) {
       }).join('')}
     </div>
   `;
-  chart.scrollLeft = chart.scrollWidth;
 }
 
 function renderActiveGrowthTab() {
