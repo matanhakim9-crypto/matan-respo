@@ -60,6 +60,7 @@
               <th>מניות</th>
               <th>מחיר נוכחי</th>
               <th>שווי</th>
+              <th>רווח</th>
               <th></th>
             </tr>
           </thead>
@@ -98,22 +99,13 @@
 
     <section class="panel">
       <h2>קצב גדילת הכנסת דיבידנד</h2>
-      <button type="button" id="growth-toggle" class="link-btn">הצג טבלאות גדילה</button>
-      <div id="growth-tables" class="hidden">
-        <h3>לפי חודש</h3>
-        <div class="table-wrap">
-          <table id="growth-monthly-table">
-            <thead><tr><th>חודש</th><th>הכנסה</th><th>שינוי</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <h3>לפי שנה</h3>
-        <div class="table-wrap">
-          <table id="growth-yearly-table">
-            <thead><tr><th>שנה</th><th>הכנסה</th><th>שינוי</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+      <p class="hint">הכנסה מדיבידנד בפועל בכל תקופה (רק ממניות שכבר החזקת בהן באותו זמן), והשינוי לעומת התקופה הקודמת.</p>
+      <div class="growth-tabs">
+        <button type="button" class="growth-tab active" data-range="monthly">לפי חודש</button>
+        <button type="button" class="growth-tab" data-range="yearly">לפי שנה</button>
+      </div>
+      <div id="growth-chart" class="bar-chart">
+        <p class="empty">טוען…</p>
       </div>
     </section>
 

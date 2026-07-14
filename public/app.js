@@ -43,11 +43,13 @@ function renderHoldings(holdings) {
   const body = document.getElementById('holdings-body');
   body.innerHTML = '';
   if (holdings.length === 0) {
-    body.innerHTML = '<tr><td colspan="6" class="empty">עדיין אין מניות בתיק</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">עדיין אין מניות בתיק</td></tr>';
     return;
   }
   for (const h of holdings) {
     const currency = h.currency ?? currencyForTicker(h.ticker);
+    const gainPct = h.gainPct ?? 0;
+    const gainSign = gainPct >= 0 ? '+' : '';
     const tr = document.createElement('tr');
     tr.className = 'holding-row';
     tr.dataset.holdingId = h.id;
@@ -57,6 +59,7 @@ function renderHoldings(holdings) {
       <td>${h.shares}</td>
       <td>${h.currentPrice != null ? fmtMoney(h.currentPrice, currency) : '—'}</td>
       <td>${fmtMoney(h.currentValue, currency)}</td>
+      <td class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
       <td>
         <button class="edit-btn" data-id="${h.id}">ערוך</button>
         <button class="delete-btn" data-id="${h.id}" data-type="holding">מחק</button>
@@ -79,7 +82,7 @@ function buildDividendDetailRow(holding) {
   const tr = document.createElement('tr');
   tr.className = 'dividend-detail-row';
   const td = document.createElement('td');
-  td.colSpan = 6;
+  td.colSpan = 7;
 
   if (payments.length === 0) {
     td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
@@ -110,7 +113,7 @@ async function loadDividends() {
 }
 
 async function refreshAll() {
-  await Promise.all([loadSummary(), loadDividends()]);
+  await Promise.all([loadSummary(), loadDividends(), loadGrowthChart()]);
   renderHoldings(lastHoldings);
 }
 
@@ -283,45 +286,67 @@ document.getElementById('dividend-form').addEventListener('submit', async (e) =>
 // ---- Dividend income growth (month over month, year over year) ----
 
 const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-
-function fmtMonthLabel(period) {
+const fmtMonthLabel = (period) => {
   const [y, m] = period.split('-');
   return `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
-}
+};
 
-function renderGrowthTable(tableId, series, labelFn) {
-  const tbody = document.querySelector(`#${tableId} tbody`);
-  tbody.innerHTML = '';
+let growthData = null;
+
+function renderBarChart(series, labelFn) {
+  const chart = document.getElementById('growth-chart');
   if (series.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="empty">אין עדיין נתונים</td></tr>';
+    chart.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד ששולמו</p>';
     return;
   }
-  for (const row of [...series].reverse()) {
-    const tr = document.createElement('tr');
-    const growthText = row.growthPct == null ? '—' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(1)}%`;
+  // Most recent period at the top, capped to the last 12 so the chart stays scannable.
+  const recent = series.slice(-12).reverse();
+  const max = Math.max(...recent.map((r) => r.total), 1);
+
+  chart.innerHTML = recent.map((row) => {
+    const widthPct = Math.max((row.total / max) * 100, 2);
+    const growthText = row.growthPct == null ? '' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(0)}%`;
     const growthClass = row.growthPct == null ? '' : row.growthPct >= 0 ? 'positive' : 'negative';
-    tr.innerHTML = `
-      <td>${labelFn(row.period)}</td>
-      <td>${fmtMoney(row.total)}</td>
-      <td class="${growthClass}">${growthText}</td>
+    return `
+      <div class="bar-row">
+        <span class="bar-label">${labelFn(row.period)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width: ${widthPct}%"></div></div>
+        <span class="bar-value">
+          ${fmtMoney(row.total)}
+          ${growthText ? `<span class="bar-delta ${growthClass}">${growthText}</span>` : ''}
+        </span>
+      </div>
     `;
-    tbody.appendChild(tr);
+  }).join('');
+}
+
+function renderActiveGrowthTab() {
+  if (!growthData) return;
+  const activeTab = document.querySelector('.growth-tab.active');
+  const range = activeTab ? activeTab.dataset.range : 'monthly';
+  if (range === 'monthly') {
+    renderBarChart(growthData.monthly, fmtMonthLabel);
+  } else {
+    renderBarChart(growthData.yearly, (p) => p);
   }
 }
 
-const growthTables = document.getElementById('growth-tables');
-document.getElementById('growth-toggle').addEventListener('click', async () => {
-  growthTables.classList.toggle('hidden');
-  if (growthTables.classList.contains('hidden') || growthTables.dataset.loaded) return;
-  try {
-    const { monthly, yearly } = await api('/api/dividends/income-growth');
-    renderGrowthTable('growth-monthly-table', monthly, fmtMonthLabel);
-    renderGrowthTable('growth-yearly-table', yearly, (p) => p);
-    growthTables.dataset.loaded = '1';
-  } catch (err) {
-    growthTables.innerHTML = `<p class="empty">שגיאה: ${err.message}</p>`;
-  }
+document.querySelectorAll('.growth-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.growth-tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+    renderActiveGrowthTab();
+  });
 });
+
+async function loadGrowthChart() {
+  try {
+    growthData = await api('/api/dividends/income-growth');
+    renderActiveGrowthTab();
+  } catch (err) {
+    document.getElementById('growth-chart').innerHTML = `<p class="empty">שגיאה: ${err.message}</p>`;
+  }
+}
 
 // ---- Sync dividends for all holdings ----
 

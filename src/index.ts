@@ -363,13 +363,21 @@ app.get('/api/summary', async (c) => {
 
     currentValue += nativeValue * toILS;
     totalInvested += h.amount_invested * toILS;
-    holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue });
+    const gainPct = h.amount_invested > 0 ? ((nativeValue - h.amount_invested) / h.amount_invested) * 100 : 0;
+    holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue, gainPct });
   }
 
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  // Only count dividends paid on/after each stock's purchase date — otherwise
+  // a stock's dividend history from before it was ever bought gets counted
+  // as if it were income the user actually received.
   const { results: paidLastYear } = await c.env.DB.prepare(
-    "SELECT ticker, amount_per_share, shares_at_payment FROM dividend_payments WHERE status = 'paid' AND payment_date >= ?"
+    `SELECT dp.ticker, dp.amount_per_share, dp.shares_at_payment
+     FROM dividend_payments dp
+     LEFT JOIN holdings h ON h.ticker = dp.ticker
+     WHERE dp.status = 'paid' AND dp.payment_date >= ?
+       AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)`
   ).bind(oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
 
   const annualDividendIncome = paidLastYear.reduce((sum, p) => {
@@ -399,7 +407,11 @@ app.get('/api/summary', async (c) => {
 
 app.get('/api/dividends/income-growth', async (c) => {
   const { results: paid } = await c.env.DB.prepare(
-    "SELECT ticker, amount_per_share, payment_date, shares_at_payment FROM dividend_payments WHERE status = 'paid' ORDER BY payment_date"
+    `SELECT dp.ticker, dp.amount_per_share, dp.payment_date, dp.shares_at_payment
+     FROM dividend_payments dp
+     LEFT JOIN holdings h ON h.ticker = dp.ticker
+     WHERE dp.status = 'paid' AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)
+     ORDER BY dp.payment_date`
   ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
   const fxRate = await getUsdIlsRate(c.env);
 

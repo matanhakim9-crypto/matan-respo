@@ -220,6 +220,83 @@ tr:last-child td {
 .positive { color: var(--green); }
 .negative { color: var(--red); }
 
+.growth-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.growth-tab {
+  padding: 0.4rem 0.8rem;
+  background: var(--card-bg-alt);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.growth-tab.active {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 600;
+}
+
+.bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.bar-label {
+  flex: 0 0 6rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-track {
+  direction: ltr;
+  flex: 1 1 auto;
+  height: 20px;
+  background: var(--card-bg-alt);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  min-width: 4px;
+  background: var(--green);
+  border-radius: 0 4px 4px 0;
+}
+
+.bar-value {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-delta {
+  display: inline-block;
+  margin-inline-start: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .market-badge {
   display: inline-block;
   padding: 0.15rem 0.5rem;
