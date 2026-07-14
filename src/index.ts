@@ -591,7 +591,9 @@ app.get('/api/summary', async (c) => {
     return sum + p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
   }, 0);
 
-  const annualYieldPct = totalInvested > 0 ? (annualDividendIncome / totalInvested) * 100 : 0;
+  // Yield on current market value (matches the per-holding yield below),
+  // not yield on the original cost basis.
+  const annualYieldPct = currentValue > 0 ? (annualDividendIncome / currentValue) * 100 : 0;
   const monthlyAvgIncome = annualDividendIncome / 12;
   const gainLoss = currentValue - totalInvested;
   const gainLossPct = totalInvested > 0 ? (gainLoss / totalInvested) * 100 : 0;
