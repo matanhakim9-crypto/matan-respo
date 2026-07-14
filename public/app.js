@@ -38,7 +38,11 @@ async function api(path, options) {
 
 let lastHoldings = [];
 let lastDividends = [];
+let lastStats = null;
 let expandedHoldingId = null;
+
+const fmtMoneyCompact = (n) =>
+  new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 }).format(n ?? 0);
 
 async function loadSummary() {
   const s = await api('/api/summary');
@@ -203,10 +207,63 @@ async function loadDividends() {
   lastDividends = await api('/api/dividends');
 }
 
+function renderTopPayers(topPayers) {
+  const el = document.getElementById('reports-top-payers');
+  if (!topPayers || topPayers.length === 0) {
+    el.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד ששולמו</p>';
+    return;
+  }
+  el.innerHTML = topPayers.map((p) => {
+    const bareTicker = p.ticker.replace('.TA', '');
+    const label = p.market === 'IL' && p.company_name ? p.company_name : bareTicker;
+    const flag = p.market === 'IL' ? '🇮🇱' : '🇺🇸';
+    return `
+      <div class="growth-list-row">
+        <span class="growth-list-period">${label} ${flag}</span>
+        <span class="growth-list-value">${fmtMoneyCompact(p.total)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadReportsStats() {
+  try {
+    lastStats = await api('/api/dividends/stats');
+    document.getElementById('reports-entry-teaser').textContent = `סה"כ ${fmtMoneyCompact(lastStats.totalAllTime)} עד היום`;
+    document.getElementById('r-total').textContent = fmtMoney(lastStats.totalAllTime);
+    document.getElementById('r-this-year').textContent = fmtMoneyCompact(lastStats.totalThisYear);
+    document.getElementById('r-last-year').textContent = fmtMoneyCompact(lastStats.totalLastYear);
+    document.getElementById('r-il').textContent = fmtMoneyCompact(lastStats.totalIL);
+    document.getElementById('r-us').textContent = fmtMoneyCompact(lastStats.totalUS);
+    renderTopPayers(lastStats.topPayers);
+  } catch (err) {
+    document.getElementById('reports-top-payers').innerHTML = `<p class="empty">שגיאה: ${err.message}</p>`;
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([loadSummary(), loadDividends(), loadGrowthChart()]);
+  await Promise.all([loadSummary(), loadDividends(), loadGrowthChart(), loadReportsStats()]);
   renderHoldings(lastHoldings);
 }
+
+// ---- Reports page navigation ----
+
+function openReportsPage() {
+  document.getElementById('home-page').classList.add('hidden');
+  document.getElementById('reports-page').classList.remove('hidden');
+  window.scrollTo(0, 0);
+  history.pushState({ page: 'reports' }, '');
+}
+
+function closeReportsPage() {
+  document.getElementById('reports-page').classList.add('hidden');
+  document.getElementById('home-page').classList.remove('hidden');
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('open-reports-btn').addEventListener('click', openReportsPage);
+document.getElementById('reports-back-btn').addEventListener('click', () => history.back());
+window.addEventListener('popstate', closeReportsPage);
 
 function showError(elementId, err) {
   const el = document.getElementById(elementId);
@@ -450,9 +507,6 @@ const fmtMonthLabel = (period) => {
 };
 
 let growthData = null;
-
-const fmtMoneyCompact = (n) =>
-  new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 }).format(n ?? 0);
 
 function renderBarChart(series, labelFn) {
   const chart = document.getElementById('growth-chart');

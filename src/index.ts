@@ -645,4 +645,53 @@ app.get('/api/dividends/income-growth', async (c) => {
   return c.json({ monthly: toSeries(byMonth), yearly: toSeries(byYear) });
 });
 
+app.get('/api/dividends/stats', async (c) => {
+  const { results: paid } = await c.env.DB.prepare(
+    `SELECT dp.ticker, dp.amount_per_share, dp.payment_date, dp.shares_at_payment, h.market, h.company_name
+     FROM dividend_payments dp
+     LEFT JOIN holdings h ON h.ticker = dp.ticker
+     WHERE dp.status = 'paid' AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)`
+  ).all<{
+    ticker: string;
+    amount_per_share: number;
+    payment_date: string;
+    shares_at_payment: number | null;
+    market: Market | null;
+    company_name: string | null;
+  }>();
+  const fxRate = await getUsdIlsRate(c.env);
+
+  const thisYear = String(new Date().getFullYear());
+  const lastYear = String(new Date().getFullYear() - 1);
+
+  let totalAllTime = 0;
+  let totalIL = 0;
+  let totalUS = 0;
+  let totalThisYear = 0;
+  let totalLastYear = 0;
+  const byTicker = new Map<string, { ticker: string; market: Market; company_name: string | null; total: number }>();
+
+  for (const p of paid) {
+    const market: Market = p.market === 'IL' ? 'IL' : 'US';
+    const toILS = toILSFactor(currencyForTicker(p.ticker), fxRate);
+    const amountILS = p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
+
+    totalAllTime += amountILS;
+    if (market === 'IL') totalIL += amountILS;
+    else totalUS += amountILS;
+
+    const year = p.payment_date.slice(0, 4);
+    if (year === thisYear) totalThisYear += amountILS;
+    if (year === lastYear) totalLastYear += amountILS;
+
+    const existing = byTicker.get(p.ticker);
+    if (existing) existing.total += amountILS;
+    else byTicker.set(p.ticker, { ticker: p.ticker, market, company_name: p.company_name, total: amountILS });
+  }
+
+  const topPayers = [...byTicker.values()].sort((a, b) => b.total - a.total);
+
+  return c.json({ totalAllTime, totalIL, totalUS, totalThisYear, totalLastYear, topPayers });
+});
+
 export default app;
