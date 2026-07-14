@@ -443,10 +443,10 @@ document.getElementById('find-date-search').addEventListener('click', async () =
 
 // ---- Dividend income growth (month over month, year over year) ----
 
-const MONTH_NAMES_SHORT = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
+const MONTH_NAMES = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const fmtMonthLabel = (period) => {
   const [y, m] = period.split('-');
-  return `${MONTH_NAMES_SHORT[parseInt(m, 10) - 1]}׳${y.slice(2)}`;
+  return `${MONTH_NAMES[parseInt(m, 10) - 1]} ${y}`;
 };
 
 let growthData = null;
@@ -462,10 +462,8 @@ function renderBarChart(series, labelFn) {
     summary.innerHTML = '';
     return;
   }
-  // Chronological, oldest to newest, capped to the last 6 periods so all columns
-  // fit on a phone screen at once without needing to scroll.
-  const recent = series.slice(-6);
-  const max = Math.max(...recent.map((r) => r.total), 1);
+  // Capped to the last 12 periods, most recent first — reads like a statement.
+  const recent = series.slice(-12).reverse();
   const totalSum = recent.reduce((sum, r) => sum + r.total, 0);
   const avg = totalSum / recent.length;
 
@@ -480,20 +478,12 @@ function renderBarChart(series, labelFn) {
     </div>
   `;
 
-  chart.innerHTML = `
-    <div class="column-chart">
-      ${recent.map((row) => {
-        const heightPct = Math.max((row.total / max) * 100, 4);
-        return `
-          <div class="column-item">
-            <span class="column-value">${fmtMoneyCompact(row.total)}</span>
-            <div class="column-bar-track"><div class="column-bar" style="height: ${heightPct}%"></div></div>
-            <span class="column-label">${labelFn(row.period)}</span>
-          </div>
-        `;
-      }).join('')}
+  chart.innerHTML = recent.map((row) => `
+    <div class="growth-list-row">
+      <span class="growth-list-period">${labelFn(row.period)}</span>
+      <span class="growth-list-value">${fmtMoneyCompact(row.total)}</span>
     </div>
-  `;
+  `).join('');
 }
 
 function renderActiveGrowthTab() {
