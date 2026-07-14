@@ -430,58 +430,95 @@ main {
   font-weight: 600;
 }
 
-.bar-chart {
+.growth-summary {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.growth-stat {
+  flex: 1 1 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.2rem;
 }
 
-.bar-row {
+.growth-stat-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.growth-stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-chart-wrap {
+  direction: ltr;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -0.2rem;
+  padding: 0 0.2rem 0.3rem;
+}
+
+.column-chart {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  align-items: flex-end;
+  gap: 1.1rem;
+  min-height: 190px;
 }
 
-.bar-label {
-  flex: 0 0 5.5rem;
-  font-size: 0.76rem;
+.column-item {
+  flex: 0 0 3.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.column-delta {
+  font-size: 0.68rem;
+  font-weight: 700;
+  min-height: 0.9rem;
+}
+
+.column-delta.positive { color: var(--green); }
+.column-delta.negative { color: var(--red); }
+
+.column-value {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.column-bar-track {
+  width: 1.6rem;
+  height: 110px;
+  display: flex;
+  align-items: flex-end;
+  background: var(--surface-2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.column-bar {
+  width: 100%;
+  min-height: 4px;
+  background: linear-gradient(180deg, var(--green) 0%, var(--green-soft) 100%);
+  border-radius: 6px 6px 0 0;
+}
+
+.column-label {
+  font-size: 0.7rem;
   color: var(--muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bar-track {
-  direction: ltr;
-  flex: 1 1 auto;
-  height: 10px;
-  background: var(--surface-2);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.bar-fill {
-  height: 100%;
-  min-width: 4px;
-  background: var(--green);
-  border-radius: 999px;
-}
-
-.bar-value {
-  flex: 0 0 auto;
-  min-width: 6.5rem;
-  text-align: left;
-  font-size: 0.8rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.bar-delta {
-  display: inline-block;
-  margin-inline-start: 0.35rem;
-  font-size: 0.72rem;
-  font-weight: 700;
 }
 
 .status-badge {
@@ -772,27 +809,6 @@ details summary::-webkit-details-marker {
   .field-row {
     flex-direction: column;
     gap: 0;
-  }
-
-  /* Growth chart bars: label + value on their own line, bar fill on the
-     next, instead of three flex items fighting for one narrow row. */
-  .bar-row {
-    flex-wrap: wrap;
-  }
-
-  .bar-label {
-    flex: 1 1 auto;
-    order: 1;
-  }
-
-  .bar-value {
-    flex: 0 0 auto;
-    order: 2;
-  }
-
-  .bar-track {
-    flex: 1 1 100%;
-    order: 3;
   }
 
   .date-helper-row {

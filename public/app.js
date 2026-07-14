@@ -451,31 +451,52 @@ const fmtMonthLabel = (period) => {
 
 let growthData = null;
 
+const fmtMoneyCompact = (n) =>
+  new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 }).format(n ?? 0);
+
 function renderBarChart(series, labelFn) {
   const chart = document.getElementById('growth-chart');
+  const summary = document.getElementById('growth-summary');
   if (series.length === 0) {
     chart.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד ששולמו</p>';
+    summary.innerHTML = '';
     return;
   }
-  // Most recent period at the top, capped to the last 12 so the chart stays scannable.
-  const recent = series.slice(-12).reverse();
+  // Chronological, oldest to newest, capped to the last 12 periods so the chart stays scannable.
+  const recent = series.slice(-12);
   const max = Math.max(...recent.map((r) => r.total), 1);
+  const totalSum = recent.reduce((sum, r) => sum + r.total, 0);
+  const avg = totalSum / recent.length;
 
-  chart.innerHTML = recent.map((row) => {
-    const widthPct = Math.max((row.total / max) * 100, 2);
-    const growthText = row.growthPct == null ? '' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(0)}%`;
-    const growthClass = row.growthPct == null ? '' : row.growthPct >= 0 ? 'positive' : 'negative';
-    return `
-      <div class="bar-row">
-        <span class="bar-label">${labelFn(row.period)}</span>
-        <div class="bar-track"><div class="bar-fill" style="width: ${widthPct}%"></div></div>
-        <span class="bar-value">
-          ${fmtMoney(row.total)}
-          ${growthText ? `<span class="bar-delta ${growthClass}">${growthText}</span>` : ''}
-        </span>
-      </div>
-    `;
-  }).join('');
+  summary.innerHTML = `
+    <div class="growth-stat">
+      <span class="growth-stat-label">ממוצע לתקופה</span>
+      <span class="growth-stat-value">${fmtMoneyCompact(avg)}</span>
+    </div>
+    <div class="growth-stat">
+      <span class="growth-stat-label">סה"כ מצטבר</span>
+      <span class="growth-stat-value">${fmtMoneyCompact(totalSum)}</span>
+    </div>
+  `;
+
+  chart.innerHTML = `
+    <div class="column-chart">
+      ${recent.map((row) => {
+        const heightPct = Math.max((row.total / max) * 100, 4);
+        const growthText = row.growthPct == null ? '' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(0)}%`;
+        const growthClass = row.growthPct == null ? '' : row.growthPct >= 0 ? 'positive' : 'negative';
+        return `
+          <div class="column-item">
+            <span class="column-delta ${growthClass}">${growthText}</span>
+            <span class="column-value">${fmtMoneyCompact(row.total)}</span>
+            <div class="column-bar-track"><div class="column-bar" style="height: ${heightPct}%"></div></div>
+            <span class="column-label">${labelFn(row.period)}</span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  chart.scrollLeft = chart.scrollWidth;
 }
 
 function renderActiveGrowthTab() {
