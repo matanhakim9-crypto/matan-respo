@@ -39,8 +39,8 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 1.1rem 1.25rem calc(1.1rem + env(safe-area-inset-top, 0px));
-  padding-top: max(1.1rem, env(safe-area-inset-top));
+  padding: 1.1rem 1.25rem;
+  padding-top: max(1.1rem, env(safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--border);
   background: linear-gradient(180deg, #0c0f14, var(--bg));
 }
