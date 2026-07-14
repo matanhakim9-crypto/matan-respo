@@ -180,6 +180,34 @@ tr:last-child td {
   color: var(--text);
 }
 
+.purchase-info {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.purchase-stat {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.purchase-stat-label {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.purchase-stat-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .dividend-card-list {
   max-height: 320px;
   overflow-y: auto;

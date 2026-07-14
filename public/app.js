@@ -105,12 +105,30 @@ function buildDividendDetailRow(holding) {
   const td = document.createElement('td');
   td.colSpan = 7;
 
+  const purchaseInfo = `
+    <div class="purchase-info">
+      <div class="purchase-stat">
+        <span class="purchase-stat-label">מחיר קנייה</span>
+        <span class="purchase-stat-value">${fmtMoney(toDisplay(holding.purchase_price), displayCurrency)}</span>
+      </div>
+      <div class="purchase-stat">
+        <span class="purchase-stat-label">שווי קנייה</span>
+        <span class="purchase-stat-value">${fmtMoney(toDisplay(holding.amount_invested), displayCurrency)}</span>
+      </div>
+      <div class="purchase-stat">
+        <span class="purchase-stat-label">תאריך קנייה</span>
+        <span class="purchase-stat-value">${holding.purchase_date ? fmtDate(holding.purchase_date) : '—'}</span>
+      </div>
+    </div>
+  `;
+
+  let dividendSection;
   if (payments.length === 0) {
-    td.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
+    dividendSection = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
   } else {
     const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? holding.shares);
     const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
-    td.innerHTML = `
+    dividendSection = `
       <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(toDisplay(total), displayCurrency)}</strong></div>
       <div class="dividend-card-list">
         ${payments.map((p) => `
@@ -133,6 +151,7 @@ function buildDividendDetailRow(holding) {
     `;
   }
 
+  td.innerHTML = purchaseInfo + dividendSection;
   tr.appendChild(td);
   return tr;
 }

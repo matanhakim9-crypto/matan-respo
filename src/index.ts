@@ -71,23 +71,89 @@ async function fetchYahooChart(ticker: string, timeframe: ChartTimeframe, events
 
 type TickerSuggestion = { symbol: string; name: string; market: Market };
 
+// Yahoo's free-text search doesn't reliably match Hebrew company names, so
+// well-known TASE stocks are also matched against this local alias list.
+// Every candidate from here is verified with a live quote before being
+// suggested (see searchTickers), so a stale/wrong guess here is filtered
+// out silently rather than shown as real.
+const ISRAELI_STOCK_ALIASES: { names: string[]; symbol: string; displayName: string }[] = [
+  { names: ['בנק הפועלים', 'הפועלים', 'poalim'], symbol: 'POLI.TA', displayName: 'בנק הפועלים' },
+  { names: ['בנק לאומי', 'לאומי', 'leumi'], symbol: 'LUMI.TA', displayName: 'בנק לאומי' },
+  { names: ['בנק דיסקונט', 'דיסקונט', 'discount bank'], symbol: 'DSCT.TA', displayName: 'בנק דיסקונט' },
+  { names: ['מזרחי טפחות', 'מזרחי', 'טפחות', 'mizrahi'], symbol: 'MZTF.TA', displayName: 'מזרחי טפחות' },
+  { names: ['בנק בינלאומי', 'הבינלאומי', 'בינלאומי', 'בנלאומי', 'פיבי', 'fibi'], symbol: 'FIBI.TA', displayName: 'הבנק הבינלאומי' },
+  { names: ['הראל השקעות', 'הראל', 'harel'], symbol: 'HARL.TA', displayName: 'הראל השקעות' },
+  { names: ['כלל החזקות', 'כלל ביטוח', 'כלל', 'clal'], symbol: 'CLIS.TA', displayName: 'כלל החזקות' },
+  { names: ['מגדל ביטוח', 'מגדל אחזקות', 'מגדל', 'migdal'], symbol: 'MGDL.TA', displayName: 'מגדל ביטוח' },
+  { names: ['הפניקס', 'phoenix'], symbol: 'PHOE1.TA', displayName: 'הפניקס' },
+  { names: ['מנורה מבטחים', 'מנורה', 'menora'], symbol: 'MMHD.TA', displayName: 'מנורה מבטחים' },
+  { names: ['טבע', 'טבע תעשיות', 'teva'], symbol: 'TEVA.TA', displayName: 'טבע תעשיות' },
+  { names: ['נייס', 'nice'], symbol: 'NICE.TA', displayName: 'נייס' },
+  { names: ['איי סי אל', 'כיל', 'icl'], symbol: 'ICL.TA', displayName: 'איי.סי.אל' },
+  { names: ['בזק', 'bezeq'], symbol: 'BEZQ.TA', displayName: 'בזק' },
+  { names: ['פרטנר', 'partner'], symbol: 'PTNR.TA', displayName: 'פרטנר' },
+  { names: ['סלקום', 'cellcom'], symbol: 'CEL.TA', displayName: 'סלקום' },
+  { names: ['שופרסל', 'shufersal'], symbol: 'SAE.TA', displayName: 'שופרסל' },
+  { names: ['רמי לוי', 'rami levy'], symbol: 'RMLI.TA', displayName: 'רמי לוי' },
+  { names: ['דלק קבוצה', 'delek group'], symbol: 'DLEKG.TA', displayName: 'דלק קבוצה' },
+  { names: ['אלביט מערכות', 'אלביט', 'elbit'], symbol: 'ESLT.TA', displayName: 'אלביט מערכות' },
+  { names: ['עזריאלי', 'azrieli'], symbol: 'AZRG.TA', displayName: 'עזריאלי' },
+  { names: ['מליסרון', 'melisron'], symbol: 'MLSR.TA', displayName: 'מליסרון' },
+  { names: ['גזית גלוב', 'gazit'], symbol: 'GZT.TA', displayName: 'גזית גלוב' },
+  { names: ['אלוני חץ', 'alony hetz'], symbol: 'ALHE.TA', displayName: 'אלוני חץ' },
+  { names: ['אמות השקעות', 'אמות', 'amot'], symbol: 'AMOT.TA', displayName: 'אמות השקעות' },
+  { names: ['וויקס', 'wix'], symbol: 'WIX', displayName: 'Wix' },
+];
+
+function matchLocalAliases(query: string): { symbol: string; displayName: string }[] {
+  const q = query.trim().toLowerCase();
+  const matches: { symbol: string; displayName: string }[] = [];
+  for (const entry of ISRAELI_STOCK_ALIASES) {
+    const hit = entry.names.some((n) => {
+      const name = n.toLowerCase();
+      return name.includes(q) || q.includes(name);
+    });
+    if (hit) matches.push({ symbol: entry.symbol, displayName: entry.displayName });
+  }
+  return matches;
+}
+
+async function symbolHasQuote(ticker: string): Promise<boolean> {
+  const result = await fetchYahooChart(ticker, { range: '5d' });
+  return typeof result?.meta?.regularMarketPrice === 'number';
+}
+
 async function searchTickers(query: string): Promise<TickerSuggestion[]> {
+  const results: TickerSuggestion[] = [];
+
+  const localMatches = matchLocalAliases(query);
+  for (const m of localMatches) {
+    if (await symbolHasQuote(m.symbol)) {
+      results.push({ symbol: m.symbol, name: m.displayName, market: 'IL' });
+    }
+  }
+
   try {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0`;
     const res = await fetch(url, { headers: YAHOO_HEADERS });
-    if (!res.ok) return [];
-    const data = await res.json<any>();
-    const quotes: any[] = data?.quotes ?? [];
-    return quotes
-      .filter((q) => q.symbol && (q.quoteType === 'EQUITY' || q.quoteType === 'ETF'))
-      .map((q) => ({
-        symbol: q.symbol as string,
-        name: (q.shortname || q.longname || q.symbol) as string,
-        market: (q.symbol as string).endsWith('.TA') || q.exchange === 'TLV' ? 'IL' : 'US',
-      }));
+    if (res.ok) {
+      const data = await res.json<any>();
+      const quotes: any[] = data?.quotes ?? [];
+      for (const q of quotes) {
+        if (!q.symbol || (q.quoteType !== 'EQUITY' && q.quoteType !== 'ETF')) continue;
+        if (results.some((r) => r.symbol === q.symbol)) continue;
+        results.push({
+          symbol: q.symbol,
+          name: q.shortname || q.longname || q.symbol,
+          market: (q.symbol as string).endsWith('.TA') || q.exchange === 'TLV' ? 'IL' : 'US',
+        });
+      }
+    }
   } catch {
-    return [];
+    // local matches (if any) still stand even if Yahoo's search fails
   }
+
+  return results.slice(0, 8);
 }
 
 async function getQuote(env: Bindings, ticker: string): Promise<number | null> {
@@ -224,7 +290,7 @@ async function syncDividendsForHolding(env: Bindings, ticker: string, shares: nu
 // ---------- Holdings ----------
 
 app.get('/api/holdings', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY ticker').all<Holding>();
+  const { results } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker').all<Holding>();
   return c.json(results);
 });
 
@@ -340,7 +406,7 @@ app.get('/api/history/:ticker', async (c) => {
 // ---------- Portfolio summary ----------
 
 app.get('/api/summary', async (c) => {
-  const { results: holdings } = await c.env.DB.prepare('SELECT * FROM holdings').all<Holding>();
+  const { results: holdings } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker').all<Holding>();
   const fxRate = await getUsdIlsRate(c.env);
 
   const oneYearAgo = new Date();
