@@ -69,16 +69,16 @@ function renderHoldings(holdings) {
     tr.className = 'holding-row';
     tr.dataset.holdingId = h.id;
     tr.innerHTML = `
-      <td>
+      <td class="td-ticker">
         <span class="expand-arrow">▸</span> ${h.ticker}
         <span class="market-flag" title="${h.market === 'IL' ? 'ת"א' : 'ארה"ב'}">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span>
       </td>
-      <td>${h.shares}</td>
-      <td>${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
-      <td>${fmtMoney(displayValue, displayCurrency)}</td>
-      <td class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
-      <td>${yieldPct.toFixed(1)}%</td>
-      <td>
+      <td data-label="מניות">${h.shares}</td>
+      <td data-label="מחיר נוכחי">${displayPrice != null ? fmtMoney(displayPrice, displayCurrency) : '—'}</td>
+      <td data-label="שווי">${fmtMoney(displayValue, displayCurrency)}</td>
+      <td data-label="רווח" class="${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</td>
+      <td data-label="תשואת דיב'">${yieldPct.toFixed(1)}%</td>
+      <td class="td-actions">
         <button class="edit-btn" data-id="${h.id}">ערוך</button>
         <button class="delete-btn" data-id="${h.id}">מחק</button>
       </td>

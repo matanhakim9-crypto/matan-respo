@@ -586,3 +586,74 @@ details summary {
 details summary::-webkit-details-marker {
   display: none;
 }
+
+/* Below this width the holdings table stops fitting side-scrolling columns
+   comfortably, so it becomes a stack of label/value cards instead. */
+@media (max-width: 640px) {
+  .table-wrap:has(#holdings-table) {
+    overflow-x: visible;
+    border: none;
+  }
+
+  #holdings-table thead {
+    display: none;
+  }
+
+  #holdings-table, #holdings-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  #holdings-table tr.holding-row {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 0.6rem;
+    overflow: hidden;
+  }
+
+  #holdings-table tr.holding-row td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+  }
+
+  #holdings-table tr.holding-row td:last-child {
+    border-bottom: none;
+  }
+
+  #holdings-table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  #holdings-table td.td-ticker {
+    background: var(--card-bg-alt);
+    font-size: 1rem;
+    font-weight: 700;
+    justify-content: flex-start;
+    gap: 0.4rem;
+  }
+
+  #holdings-table td.td-actions {
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
+  #holdings-table tr.dividend-detail-row {
+    display: block;
+  }
+
+  #holdings-table tr.dividend-detail-row td {
+    display: block;
+  }
+
+  .purchase-info {
+    grid-template-columns: 1fr;
+  }
+}
