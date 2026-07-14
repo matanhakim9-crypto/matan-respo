@@ -11,6 +11,11 @@ const fmtPct = (n) => `${(n ?? 0).toFixed(2)}%`;
 const fmtDate = (d) => new Date(d).toLocaleDateString('he-IL');
 const currencyForTicker = (ticker) => (ticker.endsWith('.TA') ? 'ILA' : 'USD');
 
+// Standard Israeli dividend withholding tax rate for individuals. This is a
+// flat estimate, not real brokerage data — actual rate depends on the
+// stock's jurisdiction, tax treaties, and the holder's personal status.
+const DIVIDEND_TAX_RATE = 0.25;
+
 const AVATAR_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
 function avatarColor(ticker) {
   let hash = 0;
@@ -148,27 +153,45 @@ function buildHoldingDetail(holding) {
     dividendSection = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
   } else {
     const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? holding.shares);
-    const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
+    const grossTotal = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
+    const netTotal = grossTotal * (1 - DIVIDEND_TAX_RATE);
     dividendSection = `
-      <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(toDisplay(total), displayCurrency)}</strong></div>
+      <div class="stock-dividend-summary">
+        <div>סה"כ ברוטו מאז הכניסה: <strong>${fmtMoney(toDisplay(grossTotal), displayCurrency)}</strong></div>
+        <div>נטו משוער אחרי מס (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%): <strong class="net-highlight">${fmtMoney(toDisplay(netTotal), displayCurrency)}</strong></div>
+      </div>
       <div class="dividend-card-list">
-        ${payments.map((p) => `
+        ${payments.map((p) => {
+          const gross = totalFor(p);
+          const tax = gross * DIVIDEND_TAX_RATE;
+          const net = gross - tax;
+          return `
           <div class="dividend-card ${p.status === 'expected' ? 'is-expected' : ''}">
             <div class="dividend-card-head">
               <span class="dividend-card-date">${fmtDate(p.payment_date)}</span>
               <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
             </div>
             <div class="dividend-card-row">
-              <span>סה"כ</span>
-              <strong>${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</strong>
+              <span>ברוטו</span>
+              <span>${fmtMoney(toDisplay(gross), displayCurrency)}</span>
+            </div>
+            <div class="dividend-card-row dividend-tax-row">
+              <span>מס (משוער ${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%)</span>
+              <span>−${fmtMoney(toDisplay(tax), displayCurrency)}</span>
+            </div>
+            <div class="dividend-card-row dividend-net-row">
+              <span>נטו</span>
+              <strong>${fmtMoney(toDisplay(net), displayCurrency)}</strong>
             </div>
             <div class="dividend-card-row">
-              <span>למניה</span>
+              <span>לפי מניה</span>
               <span>${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</span>
             </div>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
+      <p class="hint dividend-tax-disclaimer">* המס הוא הערכה בלבד (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}% אחיד), לא נתון אמיתי מהברוקר — שיעור המס בפועל תלוי בסוג המניה, אמנת מס והמעמד האישי שלך.</p>
     `;
   }
 

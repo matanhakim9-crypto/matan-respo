@@ -316,10 +316,17 @@ main {
   font-size: 0.85rem;
   color: var(--muted);
   margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .stock-dividend-summary strong {
   color: var(--text);
+}
+
+.stock-dividend-summary strong.net-highlight {
+  color: var(--green);
 }
 
 .dividend-card-list {
@@ -371,6 +378,28 @@ main {
 
 .dividend-card-row span:last-child {
   font-variant-numeric: tabular-nums;
+}
+
+.dividend-tax-row {
+  color: var(--red);
+}
+
+.dividend-net-row {
+  border-top: 1px dashed var(--border);
+  margin-top: 0.15rem;
+  padding-top: 0.35rem;
+  color: var(--text);
+}
+
+.dividend-net-row strong {
+  color: var(--green);
+  font-size: 0.9rem;
+}
+
+.dividend-tax-disclaimer {
+  margin: 0.6rem 0 0;
+  font-size: 0.68rem;
+  opacity: 0.8;
 }
 
 .positive { color: var(--green); }
