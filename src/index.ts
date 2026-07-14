@@ -370,71 +370,13 @@ async function findHistoricalDates(ticker: string, targetPrice: number, year?: n
 
 type DivPoint = { date: string; amount: number };
 
-// Yahoo's dividend-events feed only exposes the ex-dividend date, not the
-// date cash actually lands. NASDAQ's own public endpoint blocks server-side
-// requests (confirmed: it never returned data), so Finnhub's free API
-// (key stored in the app_settings table, not in code) is used instead to
-// enrich US tickers on a best-effort basis; any failure (missing key,
-// blocked request, unexpected shape, no match) silently falls back to the
-// ex-dividend date already in `points`.
-let cachedFinnhubKey: string | null | undefined;
-
-async function getFinnhubApiKey(env: Bindings): Promise<string | null> {
-  if (cachedFinnhubKey !== undefined) return cachedFinnhubKey;
-  try {
-    const row = await env.DB.prepare(`SELECT value FROM app_settings WHERE key = 'finnhub_api_key'`).first<{ value: string }>();
-    cachedFinnhubKey = row?.value ?? null;
-  } catch {
-    cachedFinnhubKey = null;
-  }
-  return cachedFinnhubKey;
-}
-
-async function fetchFinnhubPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const apiKey = await getFinnhubApiKey(env);
-  if (!apiKey) return map;
-  try {
-    const from = new Date();
-    from.setFullYear(from.getFullYear() - 10);
-    const to = new Date();
-    to.setFullYear(to.getFullYear() + 1);
-    const fromStr = from.toISOString().slice(0, 10);
-    const toStr = to.toISOString().slice(0, 10);
-    const url = `https://finnhub.io/api/v1/stock/dividend?symbol=${encodeURIComponent(symbol)}&from=${fromStr}&to=${toStr}&token=${apiKey}`;
-    const res = await fetch(url);
-    if (!res.ok) return map;
-    const data = await res.json<any>();
-    if (!Array.isArray(data)) return map;
-    for (const row of data) {
-      const exDate = typeof row?.date === 'string' ? row.date.slice(0, 10) : null;
-      const payDate = typeof row?.payDate === 'string' ? row.payDate.slice(0, 10) : null;
-      if (exDate && payDate) map.set(exDate, payDate);
-    }
-  } catch {
-    // best-effort only
-  }
-  return map;
-}
-
-async function fetchDividendHistory(env: Bindings, ticker: string): Promise<DivPoint[]> {
+async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
   const result = await fetchYahooChart(ticker, { range: '10y' }, 'div');
   const raw = result?.events?.dividends;
   if (!raw) return [];
-  const points = Object.values(raw as Record<string, { amount: number; date: number }>)
+  return Object.values(raw as Record<string, { amount: number; date: number }>)
     .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
     .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (!ticker.endsWith('.TA')) {
-    const paymentDates = await fetchFinnhubPaymentDates(env, ticker);
-    if (paymentDates.size > 0) {
-      return points
-        .map((p) => ({ ...p, date: paymentDates.get(p.date) ?? p.date }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-    }
-  }
-
-  return points;
 }
 
 // Companies usually keep a steady per-share amount and cadence between
@@ -453,30 +395,29 @@ function projectNextDividend(history: DivPoint[]): DivPoint | null {
 }
 
 async function syncDividendsForHolding(env: Bindings, ticker: string, shares: number): Promise<void> {
-  const history = await fetchDividendHistory(env, ticker);
+  const history = await fetchDividendHistory(ticker);
   if (history.length === 0) return;
 
-  // Full replace rather than incremental upsert: the date a payment is keyed
-  // on can shift between syncs (e.g. an ex-dividend date swapped out for a
-  // real payment date once enrichment succeeds), and since payment_date is
-  // part of the row's identity, an incremental upsert would leave the old
-  // row behind as a stale duplicate instead of replacing it.
-  const statements = [
-    env.DB.prepare(`DELETE FROM dividend_payments WHERE ticker = ?`).bind(ticker),
-    ...history.map((point) =>
-      env.DB.prepare(
-        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'paid', ?)`
-      ).bind(ticker, point.amount, point.date, shares)
-    ),
-  ];
+  // Batched into one round trip (rather than a read-then-write per payment)
+  // since a decade of quarterly dividends is ~40 statements.
+  const statements = history.map((point) =>
+    env.DB.prepare(
+      `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
+       VALUES (?, ?, ?, 'paid', ?)
+       ON CONFLICT(ticker, payment_date) DO UPDATE SET
+         amount_per_share = excluded.amount_per_share,
+         status = 'paid',
+         shares_at_payment = excluded.shares_at_payment`
+    ).bind(ticker, point.amount, point.date, shares)
+  );
 
   const next = projectNextDividend(history);
   if (next) {
     statements.push(
       env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'expected', ?)`
+         VALUES (?, ?, ?, 'expected', ?)
+         ON CONFLICT(ticker, payment_date) DO NOTHING`
       ).bind(ticker, next.amount, next.date, shares)
     );
   }

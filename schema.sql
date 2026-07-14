@@ -37,8 +37,3 @@ CREATE TABLE IF NOT EXISTS ticker_aliases (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_alias_query_symbol ON ticker_aliases(query, symbol);
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
