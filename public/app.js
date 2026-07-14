@@ -63,6 +63,52 @@ async function loadSummary() {
   renderHoldings(lastHoldings);
 }
 
+let holdingsSearchQuery = '';
+// Collapsed-by-default only kicks in once a group is actually long; both
+// groups start expanded so a small portfolio isn't hidden behind a click.
+let collapsedHoldingGroups = new Set();
+
+function buildHoldingRow(h) {
+  const currency = h.currency ?? currencyForTicker(h.ticker);
+  const gainPct = h.gainPct ?? 0;
+  const gainSign = gainPct >= 0 ? '+' : '';
+  const yieldPct = h.dividendYieldPct ?? 0;
+
+  // Purchase price stays in Agorot (matches how it's entered), but the
+  // live price/value columns read easier in Shekels for Israeli stocks.
+  const isIL = currency === 'ILA';
+  const displayCurrency = isIL ? 'ILS' : currency;
+  const displayValue = isIL ? h.currentValue / 100 : h.currentValue;
+
+  // Israeli stocks show the company name front and center (more
+  // recognizable to a Hebrew-reading user than a TASE ticker symbol);
+  // the ticker moves into the secondary line instead.
+  const bareTicker = h.ticker.replace('.TA', '');
+  const showCompanyName = h.market === 'IL' && h.company_name;
+  const primaryLabel = showCompanyName ? h.company_name : bareTicker;
+  const subParts = [];
+  if (showCompanyName) subParts.push(bareTicker);
+  subParts.push(`${h.shares} מניות`);
+  subParts.push(`תשואת דיב' ${yieldPct.toFixed(1)}%`);
+
+  const row = document.createElement('div');
+  row.className = 'holding-row';
+  row.dataset.holdingId = h.id;
+  row.innerHTML = `
+    <div class="holding-avatar" style="background:${avatarColor(h.ticker)}">${avatarInitials(h.ticker)}</div>
+    <div class="holding-id-block">
+      <div class="holding-ticker">${primaryLabel} <span class="market-flag">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span></div>
+      <div class="holding-sub">${subParts.join(' · ')}</div>
+    </div>
+    <div class="holding-value-block">
+      <div class="holding-value">${fmtMoney(displayValue, displayCurrency)}</div>
+      <div class="holding-gain ${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</div>
+    </div>
+    <span class="expand-arrow">›</span>
+  `;
+  return row;
+}
+
 function renderHoldings(holdings) {
   const body = document.getElementById('holdings-body');
   body.innerHTML = '';
@@ -70,51 +116,76 @@ function renderHoldings(holdings) {
     body.innerHTML = '<p class="empty">עדיין אין מניות בתיק</p>';
     return;
   }
-  for (const h of holdings) {
-    const currency = h.currency ?? currencyForTicker(h.ticker);
-    const gainPct = h.gainPct ?? 0;
-    const gainSign = gainPct >= 0 ? '+' : '';
-    const yieldPct = h.dividendYieldPct ?? 0;
 
-    // Purchase price stays in Agorot (matches how it's entered), but the
-    // live price/value columns read easier in Shekels for Israeli stocks.
-    const isIL = currency === 'ILA';
-    const displayCurrency = isIL ? 'ILS' : currency;
-    const displayValue = isIL ? h.currentValue / 100 : h.currentValue;
+  const query = holdingsSearchQuery.trim().toLowerCase();
+  const filtered = query
+    ? holdings.filter((h) => {
+        const bare = h.ticker.replace('.TA', '').toLowerCase();
+        const name = (h.company_name || '').toLowerCase();
+        return bare.includes(query) || name.includes(query);
+      })
+    : holdings;
 
-    // Israeli stocks show the company name front and center (more
-    // recognizable to a Hebrew-reading user than a TASE ticker symbol);
-    // the ticker moves into the secondary line instead.
-    const bareTicker = h.ticker.replace('.TA', '');
-    const showCompanyName = h.market === 'IL' && h.company_name;
-    const primaryLabel = showCompanyName ? h.company_name : bareTicker;
-    const subParts = [];
-    if (showCompanyName) subParts.push(bareTicker);
-    subParts.push(`${h.shares} מניות`);
-    subParts.push(`תשואת דיב' ${yieldPct.toFixed(1)}%`);
+  if (filtered.length === 0) {
+    body.innerHTML = '<p class="empty">לא נמצאה מניה תואמת</p>';
+    return;
+  }
 
-    const row = document.createElement('div');
-    row.className = 'holding-row';
-    row.dataset.holdingId = h.id;
-    row.innerHTML = `
-      <div class="holding-avatar" style="background:${avatarColor(h.ticker)}">${avatarInitials(h.ticker)}</div>
-      <div class="holding-id-block">
-        <div class="holding-ticker">${primaryLabel} <span class="market-flag">${h.market === 'IL' ? '🇮🇱' : '🇺🇸'}</span></div>
-        <div class="holding-sub">${subParts.join(' · ')}</div>
-      </div>
-      <div class="holding-value-block">
-        <div class="holding-value">${fmtMoney(displayValue, displayCurrency)}</div>
-        <div class="holding-gain ${gainPct >= 0 ? 'positive' : 'negative'}">${gainSign}${gainPct.toFixed(1)}%</div>
-      </div>
-      <span class="expand-arrow">›</span>
+  // Grouped by market instead of one flat list, so a portfolio with many
+  // stocks stays scannable — each group is collapsible and shows a subtotal.
+  const groups = [
+    { key: 'IL', label: 'מניות ישראליות', flag: '🇮🇱', currency: 'ILS' },
+    { key: 'US', label: 'מניות אמריקאיות', flag: '🇺🇸', currency: 'USD' },
+  ];
+
+  for (const group of groups) {
+    const items = filtered.filter((h) => h.market === group.key);
+    if (items.length === 0) continue;
+
+    const groupValue = items.reduce((sum, h) => {
+      const isIL = (h.currency ?? currencyForTicker(h.ticker)) === 'ILA';
+      return sum + (isIL ? h.currentValue / 100 : h.currentValue);
+    }, 0);
+    const isOpen = !collapsedHoldingGroups.has(group.key);
+
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'group-header holdings-group-header';
+    header.dataset.groupKey = group.key;
+    header.innerHTML = `
+      <span class="group-title">${group.flag} ${group.label} <span class="group-count">${items.length}</span></span>
+      <span class="group-value">${fmtMoney(groupValue, group.currency)}</span>
+      <span class="expand-arrow group-arrow ${isOpen ? 'expanded' : ''}">›</span>
     `;
-    body.appendChild(row);
-    if (String(h.id) === String(expandedHoldingId)) {
-      body.appendChild(buildHoldingDetail(h));
-      row.classList.add('expanded');
+    body.appendChild(header);
+
+    const groupBody = document.createElement('div');
+    groupBody.className = 'group-body' + (isOpen ? '' : ' hidden');
+    for (const h of items) {
+      const row = buildHoldingRow(h);
+      groupBody.appendChild(row);
+      if (String(h.id) === String(expandedHoldingId)) {
+        groupBody.appendChild(buildHoldingDetail(h));
+        row.classList.add('expanded');
+      }
     }
+    body.appendChild(groupBody);
   }
 }
+
+document.getElementById('holdings-search-input').addEventListener('input', (e) => {
+  holdingsSearchQuery = e.target.value;
+  renderHoldings(lastHoldings);
+});
+
+document.addEventListener('click', (e) => {
+  const header = e.target.closest('.holdings-group-header');
+  if (!header) return;
+  const key = header.dataset.groupKey;
+  if (collapsedHoldingGroups.has(key)) collapsedHoldingGroups.delete(key);
+  else collapsedHoldingGroups.add(key);
+  renderHoldings(lastHoldings);
+});
 
 function buildHoldingDetail(holding) {
   const currency = currencyForTicker(holding.ticker);
@@ -507,8 +578,13 @@ const fmtMonthLabel = (period) => {
 };
 
 let growthData = null;
+// Which years are expanded in the monthly view's year-accordion. Left null
+// until the first render, which opens just the most recent year so the full
+// history (every month since the first purchase) is reachable without
+// dumping it all into one long list.
+let expandedGrowthYears = null;
 
-function renderBarChart(series, labelFn) {
+function renderBarChart(series, labelFn, groupByYear) {
   const chart = document.getElementById('growth-chart');
   const summary = document.getElementById('growth-summary');
   if (series.length === 0) {
@@ -516,10 +592,8 @@ function renderBarChart(series, labelFn) {
     summary.innerHTML = '';
     return;
   }
-  // Capped to the last 12 periods, most recent first — reads like a statement.
-  const recent = series.slice(-12).reverse();
-  const totalSum = recent.reduce((sum, r) => sum + r.total, 0);
-  const avg = totalSum / recent.length;
+  const totalSum = series.reduce((sum, r) => sum + r.total, 0);
+  const avg = totalSum / series.length;
 
   summary.innerHTML = `
     <div class="growth-stat">
@@ -532,12 +606,49 @@ function renderBarChart(series, labelFn) {
     </div>
   `;
 
-  chart.innerHTML = recent.map((row) => `
-    <div class="growth-list-row">
-      <span class="growth-list-period">${labelFn(row.period)}</span>
-      <span class="growth-list-value">${fmtMoneyCompact(row.total)}</span>
-    </div>
-  `).join('');
+  if (!groupByYear) {
+    chart.innerHTML = [...series].reverse().map((row) => `
+      <div class="growth-list-row">
+        <span class="growth-list-period">${labelFn(row.period)}</span>
+        <span class="growth-list-value">${fmtMoneyCompact(row.total)}</span>
+      </div>
+    `).join('');
+    return;
+  }
+
+  // Every month since the first purchase, grouped into collapsible
+  // per-year sections instead of one long flat list.
+  const byYear = new Map();
+  for (const row of series) {
+    const year = row.period.slice(0, 4);
+    if (!byYear.has(year)) byYear.set(year, []);
+    byYear.get(year).push(row);
+  }
+  const years = [...byYear.keys()].sort().reverse();
+  if (expandedGrowthYears === null) {
+    expandedGrowthYears = new Set(years.length ? [years[0]] : []);
+  }
+
+  chart.innerHTML = years.map((year) => {
+    const rows = byYear.get(year).slice().reverse();
+    const yearTotal = rows.reduce((sum, r) => sum + r.total, 0);
+    const isOpen = expandedGrowthYears.has(year);
+    return `
+      <button type="button" class="group-header growth-year-header" data-year="${year}">
+        <span class="group-title">${year}</span>
+        <span class="group-value">${fmtMoneyCompact(yearTotal)}</span>
+        <span class="expand-arrow group-arrow ${isOpen ? 'expanded' : ''}">›</span>
+      </button>
+      <div class="group-body ${isOpen ? '' : 'hidden'}">
+        ${rows.map((row) => `
+          <div class="growth-list-row">
+            <span class="growth-list-period">${labelFn(row.period)}</span>
+            <span class="growth-list-value">${fmtMoneyCompact(row.total)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }).join('');
 }
 
 function renderActiveGrowthTab() {
@@ -545,11 +656,20 @@ function renderActiveGrowthTab() {
   const activeTab = document.querySelector('.growth-tab.active');
   const range = activeTab ? activeTab.dataset.range : 'monthly';
   if (range === 'monthly') {
-    renderBarChart(growthData.monthly, fmtMonthLabel);
+    renderBarChart(growthData.monthly, fmtMonthLabel, true);
   } else {
-    renderBarChart(growthData.yearly, (p) => p);
+    renderBarChart(growthData.yearly, (p) => p, false);
   }
 }
+
+document.addEventListener('click', (e) => {
+  const header = e.target.closest('.growth-year-header');
+  if (!header) return;
+  const year = header.dataset.year;
+  if (expandedGrowthYears.has(year)) expandedGrowthYears.delete(year);
+  else expandedGrowthYears.add(year);
+  renderActiveGrowthTab();
+});
 
 document.querySelectorAll('.growth-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
