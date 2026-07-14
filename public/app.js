@@ -484,11 +484,8 @@ function renderBarChart(series, labelFn) {
     <div class="column-chart">
       ${recent.map((row) => {
         const heightPct = Math.max((row.total / max) * 100, 4);
-        const growthText = row.growthPct == null ? '' : `${row.growthPct >= 0 ? '+' : ''}${row.growthPct.toFixed(0)}%`;
-        const growthClass = row.growthPct == null ? '' : row.growthPct >= 0 ? 'positive' : 'negative';
         return `
           <div class="column-item">
-            <span class="column-delta ${growthClass}">${growthText}</span>
             <span class="column-value">${fmtMoneyCompact(row.total)}</span>
             <div class="column-bar-track"><div class="column-bar" style="height: ${heightPct}%"></div></div>
             <span class="column-label">${labelFn(row.period)}</span>

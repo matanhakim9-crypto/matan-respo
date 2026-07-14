@@ -479,15 +479,6 @@ main {
   gap: 0.3rem;
 }
 
-.column-delta {
-  font-size: 0.66rem;
-  font-weight: 700;
-  min-height: 0.9rem;
-}
-
-.column-delta.positive { color: var(--green); }
-.column-delta.negative { color: var(--red); }
-
 .column-value {
   font-size: 0.68rem;
   font-weight: 600;
