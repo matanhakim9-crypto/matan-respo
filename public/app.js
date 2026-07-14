@@ -89,6 +89,9 @@ function renderHoldings(holdings) {
 
 function buildDividendDetailRow(holding) {
   const currency = currencyForTicker(holding.ticker);
+  const isIL = currency === 'ILA';
+  const displayCurrency = isIL ? 'ILS' : currency;
+  const toDisplay = (n) => (isIL ? n / 100 : n);
   const payments = lastDividends
     .filter((p) => p.ticker === holding.ticker && (!holding.purchase_date || p.payment_date >= holding.purchase_date))
     .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
@@ -104,13 +107,13 @@ function buildDividendDetailRow(holding) {
     const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? holding.shares);
     const total = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
     td.innerHTML = `
-      <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(total, currency)}</strong></div>
+      <div class="stock-dividend-summary">סה"כ שולם מאז הכניסה: <strong>${fmtMoney(toDisplay(total), displayCurrency)}</strong></div>
       <ul class="stock-dividend-list">
         ${payments.map((p) => `
           <li>
             <span class="div-date">${fmtDate(p.payment_date)}</span>
-            <span class="div-amount">${fmtMoney(totalFor(p), currency)}</span>
-            <span class="div-rate">${fmtMoney(p.amount_per_share, currency)}/מניה</span>
+            <span class="div-amount">${fmtMoney(toDisplay(totalFor(p)), displayCurrency)}</span>
+            <span class="div-rate">${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}/מניה</span>
             <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
           </li>
         `).join('')}
