@@ -95,12 +95,46 @@ main {
 /* ---------- Auth (login / register) ---------- */
 
 .auth-page {
-  max-width: 420px;
-  margin: 3rem auto 0;
-  padding: 0 1rem;
+  min-height: calc(100dvh - 4.3rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.2rem;
+  padding: 1.5rem 1.25rem;
+}
+
+.auth-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  text-align: center;
+}
+
+.auth-brand-logo {
+  width: 4.2rem;
+  height: 4.2rem;
+}
+
+.auth-brand h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.auth-brand p {
+  margin: 0;
+  max-width: 20rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .auth-card {
+  width: 100%;
+  max-width: 380px;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 18px;
