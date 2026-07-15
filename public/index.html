@@ -173,7 +173,11 @@
             <span class="trend-total" id="trend-total">–</span>
             <span class="trend-delta" id="trend-delta"></span>
           </div>
-          <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+          <div class="chart-wrap">
+            <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+            <div id="trend-tooltip" class="chart-tooltip hidden"></div>
+          </div>
+          <p class="hint chart-hint">גע בגרף או העבר עליו את העכבר כדי לראות את הנתונים של כל תקופה.</p>
         </section>
 
         <section class="panel">
@@ -183,7 +187,10 @@
             <span class="trend-total" id="rate-latest">–</span>
             <span class="trend-delta" id="rate-avg"></span>
           </div>
-          <svg id="rate-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+          <div class="chart-wrap">
+            <svg id="rate-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+            <div id="rate-tooltip" class="chart-tooltip hidden"></div>
+          </div>
         </section>
 
         <section class="panel">

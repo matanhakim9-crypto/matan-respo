@@ -396,6 +396,8 @@ function pickLabelIndices(n, maxLabels) {
   return [...new Set(idx)];
 }
 
+let trendChartState = null;
+
 function renderTrendChart() {
   const svg = document.getElementById('trend-chart-svg');
   const totalEl = document.getElementById('trend-total');
@@ -408,6 +410,7 @@ function renderTrendChart() {
     svg.innerHTML = '';
     totalEl.textContent = '–';
     deltaEl.textContent = '';
+    trendChartState = null;
     return;
   }
 
@@ -472,11 +475,15 @@ function renderTrendChart() {
     <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="#00d68f" stroke="#06070a" stroke-width="2" />
     ${xAxis}
   `;
+
+  trendChartState = { points, series, plotTop, plotBottom };
 }
 
 // Month-over-month (or year-over-year) % change, as its own diverging
 // chart — separate from the raw-amount trend above, since "how fast is
 // this growing" and "how much came in" are different questions.
+let rateChartState = null;
+
 function renderGrowthRateChart() {
   const svg = document.getElementById('rate-chart-svg');
   const latestEl = document.getElementById('rate-latest');
@@ -490,6 +497,7 @@ function renderGrowthRateChart() {
     svg.innerHTML = '';
     latestEl.textContent = '–';
     avgEl.textContent = '';
+    rateChartState = null;
     return;
   }
 
@@ -551,6 +559,8 @@ function renderGrowthRateChart() {
     <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="${lastColor}" stroke="#06070a" stroke-width="2" />
     ${xAxis}
   `;
+
+  rateChartState = { points, series, plotTop, plotBottom };
 }
 
 document.getElementById('trend-range-tabs').addEventListener('click', (e) => {
@@ -561,6 +571,114 @@ document.getElementById('trend-range-tabs').addEventListener('click', (e) => {
   btn.classList.add('active');
   renderTrendChart();
   renderGrowthRateChart();
+});
+
+// Touch/mouse crosshair + tooltip for a line chart. Bound once per SVG (the
+// chart's innerHTML gets fully replaced on every re-render, but that only
+// touches children — the listeners below stay attached to the svg element
+// itself). `getState` is read on every pointer event so it always sees the
+// latest render's points, even after the range picker changes.
+function attachChartHover(svgId, tooltipId, getState, formatPoint) {
+  const svg = document.getElementById(svgId);
+  const tooltip = document.getElementById(tooltipId);
+
+  function svgPointFromClient(clientX, clientY) {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    return pt.matrixTransform(ctm.inverse());
+  }
+
+  function update(clientX, clientY) {
+    const state = getState();
+    if (!state || state.points.length === 0) return;
+    const svgPt = svgPointFromClient(clientX, clientY);
+    if (!svgPt) return;
+
+    let nearest = 0;
+    let bestDist = Infinity;
+    state.points.forEach((p, i) => {
+      const d = Math.abs(p.x - svgPt.x);
+      if (d < bestDist) { bestDist = d; nearest = i; }
+    });
+    const p = state.points[nearest];
+
+    let crosshair = svg.querySelector('.hover-crosshair');
+    if (!crosshair) {
+      crosshair = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      crosshair.setAttribute('class', 'hover-crosshair');
+      crosshair.setAttribute('stroke', 'rgba(255,255,255,0.22)');
+      crosshair.setAttribute('stroke-width', '1');
+      svg.appendChild(crosshair);
+    }
+    crosshair.setAttribute('x1', p.x);
+    crosshair.setAttribute('x2', p.x);
+    crosshair.setAttribute('y1', state.plotTop);
+    crosshair.setAttribute('y2', state.plotBottom);
+    crosshair.style.display = '';
+
+    let dot = svg.querySelector('.hover-dot');
+    if (!dot) {
+      dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', 'hover-dot');
+      dot.setAttribute('r', '5.5');
+      dot.setAttribute('fill', '#f5f6f8');
+      dot.setAttribute('stroke', '#06070a');
+      dot.setAttribute('stroke-width', '2');
+      svg.appendChild(dot);
+    }
+    dot.setAttribute('cx', p.x);
+    dot.setAttribute('cy', p.y);
+    dot.style.display = '';
+
+    const info = formatPoint(nearest, state);
+    tooltip.innerHTML = `<div class="chart-tooltip-date">${info.title}</div><div class="chart-tooltip-value">${info.value}</div>`;
+    tooltip.classList.remove('hidden');
+
+    const wrap = svg.parentElement;
+    const wrapRect = wrap.getBoundingClientRect();
+    const screenPos = p2 => {
+      const sp = svg.createSVGPoint();
+      sp.x = p2.x;
+      sp.y = p2.y;
+      return sp.matrixTransform(svg.getScreenCTM());
+    };
+    const pos = screenPos(p);
+    const tw = tooltip.offsetWidth || 90;
+    const left = Math.max(4, Math.min(pos.x - wrapRect.left - tw / 2, wrapRect.width - tw - 4));
+    const top = Math.max(0, pos.y - wrapRect.top - 42);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  function hide() {
+    tooltip.classList.add('hidden');
+    const crosshair = svg.querySelector('.hover-crosshair');
+    const dot = svg.querySelector('.hover-dot');
+    if (crosshair) crosshair.style.display = 'none';
+    if (dot) dot.style.display = 'none';
+  }
+
+  svg.addEventListener('pointerdown', (e) => update(e.clientX, e.clientY));
+  svg.addEventListener('pointermove', (e) => update(e.clientX, e.clientY));
+  svg.addEventListener('pointerup', hide);
+  svg.addEventListener('pointerleave', hide);
+  svg.addEventListener('pointercancel', hide);
+}
+
+attachChartHover('trend-chart-svg', 'trend-tooltip', () => trendChartState, (i, state) => ({
+  title: fmtMonthLabel(state.series[i].period),
+  value: fmtMoneyCompact(state.series[i].total),
+}));
+
+attachChartHover('rate-chart-svg', 'rate-tooltip', () => rateChartState, (i, state) => {
+  const v = state.series[i].growthPct;
+  return {
+    title: fmtMonthLabel(state.series[i].period),
+    value: `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+  };
 });
 
 function renderMarketDonut() {
