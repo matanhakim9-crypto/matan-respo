@@ -474,6 +474,85 @@ function renderTrendChart() {
   `;
 }
 
+// Month-over-month (or year-over-year) % change, as its own diverging
+// chart — separate from the raw-amount trend above, since "how fast is
+// this growing" and "how much came in" are different questions.
+function renderGrowthRateChart() {
+  const svg = document.getElementById('rate-chart-svg');
+  const latestEl = document.getElementById('rate-latest');
+  const avgEl = document.getElementById('rate-avg');
+  const all = growthData?.monthly ?? [];
+  const months = TREND_RANGE_MONTHS[trendRangeKey];
+  const windowed = months ? all.slice(-months) : all;
+  const series = windowed.filter((r) => r.growthPct != null);
+
+  if (series.length === 0) {
+    svg.innerHTML = '';
+    latestEl.textContent = '–';
+    avgEl.textContent = '';
+    return;
+  }
+
+  const latest = series[series.length - 1].growthPct;
+  latestEl.textContent = `${latest >= 0 ? '+' : ''}${latest.toFixed(0)}%`;
+  latestEl.className = 'trend-total ' + (latest >= 0 ? 'positive' : 'negative');
+
+  const avg = series.reduce((sum, r) => sum + r.growthPct, 0) / series.length;
+  avgEl.textContent = `ממוצע בתקופה: ${avg >= 0 ? '+' : ''}${avg.toFixed(0)}%`;
+  avgEl.className = 'trend-delta';
+
+  const plotLeft = 34, plotRight = 312, plotTop = 12, plotBottom = 122;
+  const values = series.map((r) => r.growthPct);
+  const maxVal = Math.max(...values, 0);
+  const minVal = Math.min(...values, 0);
+  const range = maxVal - minVal || 1;
+  const yFor = (v) => plotBottom - ((v - minVal) / range) * (plotBottom - plotTop);
+  const baselineY = yFor(0);
+
+  const stepX = series.length > 1 ? (plotRight - plotLeft) / (series.length - 1) : 0;
+  const points = series.map((r, i) => ({ x: plotLeft + i * stepX, y: yFor(r.growthPct) }));
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${baselineY} L${points[0].x.toFixed(1)},${baselineY} Z`;
+  const lastPoint = points[points.length - 1];
+  const lastColor = values[values.length - 1] >= 0 ? '#00d68f' : '#ff5c5c';
+
+  const yAxis = [
+    { y: plotTop, value: maxVal },
+    { y: baselineY, value: 0 },
+    { y: plotBottom, value: minVal },
+  ].map(({ y, value }) => `
+    <line x1="${plotLeft}" y1="${y.toFixed(1)}" x2="${plotRight}" y2="${y.toFixed(1)}" stroke="#232a35" stroke-width="1" />
+    <text x="${(plotLeft - 6).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="#8b93a1" font-size="8.5">${value >= 0 ? '+' : ''}${value.toFixed(0)}%</text>
+  `).join('');
+
+  const xAxis = pickLabelIndices(series.length, 4)
+    .map((i) => `<text x="${points[i].x.toFixed(1)}" y="${plotBottom + 16}" text-anchor="middle" fill="#8b93a1" font-size="8.5">${shortMonthLabel(series[i].period)}</text>`)
+    .join('');
+
+  svg.innerHTML = `
+    <defs>
+      <clipPath id="rateClipAbove"><rect x="${plotLeft}" y="${plotTop}" width="${plotRight - plotLeft}" height="${Math.max(baselineY - plotTop, 0)}" /></clipPath>
+      <clipPath id="rateClipBelow"><rect x="${plotLeft}" y="${baselineY}" width="${plotRight - plotLeft}" height="${Math.max(plotBottom - baselineY, 0)}" /></clipPath>
+      <linearGradient id="rateAreaGradUp" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#00d68f" stop-opacity="0.35" />
+        <stop offset="1" stop-color="#00d68f" stop-opacity="0" />
+      </linearGradient>
+      <linearGradient id="rateAreaGradDown" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#ff5c5c" stop-opacity="0.35" />
+        <stop offset="1" stop-color="#ff5c5c" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+    ${yAxis}
+    <path d="${areaPath}" fill="url(#rateAreaGradUp)" clip-path="url(#rateClipAbove)" />
+    <path d="${areaPath}" fill="url(#rateAreaGradDown)" clip-path="url(#rateClipBelow)" />
+    <path d="${linePath}" fill="none" stroke="#00d68f" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#rateClipAbove)" />
+    <path d="${linePath}" fill="none" stroke="#ff5c5c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#rateClipBelow)" />
+    <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="${lastColor}" stroke="#06070a" stroke-width="2" />
+    ${xAxis}
+  `;
+}
+
 document.getElementById('trend-range-tabs').addEventListener('click', (e) => {
   const btn = e.target.closest('.growth-tab');
   if (!btn) return;
@@ -481,6 +560,7 @@ document.getElementById('trend-range-tabs').addEventListener('click', (e) => {
   document.querySelectorAll('#trend-range-tabs .growth-tab').forEach((t) => t.classList.remove('active'));
   btn.classList.add('active');
   renderTrendChart();
+  renderGrowthRateChart();
 });
 
 function renderMarketDonut() {
@@ -527,6 +607,7 @@ function renderMarketDonut() {
 
 function renderCharts() {
   renderTrendChart();
+  renderGrowthRateChart();
   renderMarketDonut();
 }
 

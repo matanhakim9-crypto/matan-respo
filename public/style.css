@@ -791,6 +791,8 @@ main {
 
 .trend-delta.positive { color: var(--green); }
 .trend-delta.negative { color: var(--red); }
+.trend-total.positive { color: var(--green); }
+.trend-total.negative { color: var(--red); }
 
 .trend-chart {
   width: 100%;
