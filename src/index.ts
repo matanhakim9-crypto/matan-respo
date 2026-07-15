@@ -606,21 +606,21 @@ async function logFmpDebug(env: Bindings, info: Record<string, unknown>): Promis
 async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
   const apiKey = await getFmpApiKey(env);
   if (!apiKey) {
-    await logFmpDebug(env, { symbol, error: 'no_api_key' });
-    return getCachedPaymentDates(env, symbol);
+    await logFmpDebug(env, { provider: 'fmp', symbol, error: 'no_api_key' });
+    return new Map();
   }
   try {
     const url = `https://financialmodelingprep.com/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
     const res = await fetch(url);
     if (!res.ok) {
       const bodySnippet = await res.text().then((t) => t.slice(0, 300)).catch(() => '');
-      await logFmpDebug(env, { symbol, error: 'http_status', status: res.status, bodySnippet });
-      return getCachedPaymentDates(env, symbol);
+      await logFmpDebug(env, { provider: 'fmp', symbol, error: 'http_status', status: res.status, bodySnippet });
+      return new Map();
     }
     const data = await res.json<any>();
     if (!Array.isArray(data)) {
-      await logFmpDebug(env, { symbol, error: 'not_array', bodySnippet: JSON.stringify(data).slice(0, 300) });
-      return getCachedPaymentDates(env, symbol);
+      await logFmpDebug(env, { provider: 'fmp', symbol, error: 'not_array', bodySnippet: JSON.stringify(data).slice(0, 300) });
+      return new Map();
     }
 
     const map = new Map<string, string>();
@@ -630,27 +630,98 @@ async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<
       if (exDate && payDate) map.set(exDate, payDate);
     }
     if (map.size === 0) {
-      await logFmpDebug(env, { symbol, error: 'empty_map', rowCount: data.length, sampleRow: data[0] ?? null });
-      return getCachedPaymentDates(env, symbol);
+      await logFmpDebug(env, { provider: 'fmp', symbol, error: 'empty_map', rowCount: data.length, sampleRow: data[0] ?? null });
+      return new Map();
     }
-    await logFmpDebug(env, { symbol, ok: true, count: map.size });
-
-    try {
-      const statements = [...map.entries()].map(([exDate, payDate]) =>
-        env.DB.prepare(
-          `INSERT INTO dividend_pay_date_cache (ticker, ex_date, pay_date) VALUES (?, ?, ?)
-           ON CONFLICT(ticker, ex_date) DO UPDATE SET pay_date = excluded.pay_date`
-        ).bind(symbol, exDate, payDate)
-      );
-      await env.DB.batch(statements);
-    } catch {
-      // caching is best-effort; the freshly fetched map is still returned below
-    }
+    await logFmpDebug(env, { provider: 'fmp', symbol, ok: true, count: map.size });
+    await cachePaymentDates(env, symbol, map);
     return map;
   } catch (err) {
-    await logFmpDebug(env, { symbol, error: 'exception', message: err instanceof Error ? err.message : String(err) });
-    return getCachedPaymentDates(env, symbol);
+    await logFmpDebug(env, { provider: 'fmp', symbol, error: 'exception', message: err instanceof Error ? err.message : String(err) });
+    return new Map();
   }
+}
+
+let cachedAvKey: string | null | undefined;
+
+async function getAlphaVantageApiKey(env: Bindings): Promise<string | null> {
+  if (cachedAvKey !== undefined) return cachedAvKey;
+  try {
+    const row = await env.DB.prepare(`SELECT value FROM app_settings WHERE key = 'alpha_vantage_api_key'`).first<{ value: string }>();
+    cachedAvKey = row?.value ?? null;
+  } catch {
+    cachedAvKey = null;
+  }
+  return cachedAvKey;
+}
+
+// Fallback source used when FMP has no coverage for a symbol (its free tier
+// gates some tickers behind a 402 "premium" error).
+async function fetchAlphaVantagePaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
+  const apiKey = await getAlphaVantageApiKey(env);
+  if (!apiKey) {
+    await logFmpDebug(env, { provider: 'alphavantage', symbol, error: 'no_api_key' });
+    return new Map();
+  }
+  try {
+    const url = `https://www.alphavantage.co/query?function=DIVIDENDS&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const bodySnippet = await res.text().then((t) => t.slice(0, 300)).catch(() => '');
+      await logFmpDebug(env, { provider: 'alphavantage', symbol, error: 'http_status', status: res.status, bodySnippet });
+      return new Map();
+    }
+    const data = await res.json<any>();
+    const rows = Array.isArray(data?.data) ? data.data : null;
+    if (!rows) {
+      await logFmpDebug(env, { provider: 'alphavantage', symbol, error: 'not_array', bodySnippet: JSON.stringify(data).slice(0, 300) });
+      return new Map();
+    }
+
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      const exDate = typeof row?.ex_dividend_date === 'string' ? row.ex_dividend_date.slice(0, 10) : null;
+      const payDate = typeof row?.payment_date === 'string' && row.payment_date ? row.payment_date.slice(0, 10) : null;
+      if (exDate && payDate) map.set(exDate, payDate);
+    }
+    if (map.size === 0) {
+      await logFmpDebug(env, { provider: 'alphavantage', symbol, error: 'empty_map', rowCount: rows.length, sampleRow: rows[0] ?? null });
+      return new Map();
+    }
+    await logFmpDebug(env, { provider: 'alphavantage', symbol, ok: true, count: map.size });
+    await cachePaymentDates(env, symbol, map);
+    return map;
+  } catch (err) {
+    await logFmpDebug(env, { provider: 'alphavantage', symbol, error: 'exception', message: err instanceof Error ? err.message : String(err) });
+    return new Map();
+  }
+}
+
+async function cachePaymentDates(env: Bindings, symbol: string, map: Map<string, string>): Promise<void> {
+  try {
+    const statements = [...map.entries()].map(([exDate, payDate]) =>
+      env.DB.prepare(
+        `INSERT INTO dividend_pay_date_cache (ticker, ex_date, pay_date) VALUES (?, ?, ?)
+         ON CONFLICT(ticker, ex_date) DO UPDATE SET pay_date = excluded.pay_date`
+      ).bind(symbol, exDate, payDate)
+    );
+    await env.DB.batch(statements);
+  } catch {
+    // caching is best-effort
+  }
+}
+
+// Tries FMP first (works for the symbols its free tier covers), falls back
+// to Alpha Vantage for symbols FMP won't serve, and falls back to whatever
+// was previously cached in D1 if both live calls come up empty — so a
+// provider hiccup never regresses an already-known payment date back to the
+// ex-date.
+async function fetchPaymentDatesForTicker(env: Bindings, symbol: string): Promise<Map<string, string>> {
+  const fmpMap = await fetchFmpPaymentDates(env, symbol);
+  if (fmpMap.size > 0) return fmpMap;
+  const avMap = await fetchAlphaVantagePaymentDates(env, symbol);
+  if (avMap.size > 0) return avMap;
+  return getCachedPaymentDates(env, symbol);
 }
 
 async function fetchDividendHistory(env: Bindings, ticker: string): Promise<EnrichedDivPoint[]> {
@@ -661,7 +732,7 @@ async function fetchDividendHistory(env: Bindings, ticker: string): Promise<Enri
     .map((p) => ({ exDate: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
     .sort((a, b) => a.exDate.localeCompare(b.exDate));
 
-  const payDates = ticker.endsWith('.TA') ? new Map<string, string>() : await fetchFmpPaymentDates(env, ticker);
+  const payDates = ticker.endsWith('.TA') ? new Map<string, string>() : await fetchPaymentDatesForTicker(env, ticker);
 
   return points.map((p) => ({ exDate: p.exDate, payDate: payDates.get(p.exDate) ?? p.exDate, amount: p.amount }));
 }
