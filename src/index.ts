@@ -394,31 +394,51 @@ function projectNextDividend(history: DivPoint[]): DivPoint | null {
   return { date: new Date(nextMs).toISOString().slice(0, 10), amount: last.amount };
 }
 
-async function syncDividendsForHolding(env: Bindings, ticker: string, shares: number): Promise<void> {
+// A ticker can now be held across multiple purchase lots (e.g. bought more
+// shares later at a different price/date), so dividend history is synced
+// per ticker rather than per lot — and each payment's shares_at_payment
+// reflects only the lots already purchased by that payment's date, not the
+// portfolio's current total.
+async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<void> {
+  const { results: lots } = await env.DB.prepare(
+    'SELECT shares, purchase_date FROM holdings WHERE ticker = ?'
+  ).bind(ticker).all<{ shares: number; purchase_date: string | null }>();
+
+  if (lots.length === 0) {
+    // Every lot for this ticker was removed — nothing left to show history for.
+    await env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker).run();
+    return;
+  }
+
   const history = await fetchDividendHistory(ticker);
   if (history.length === 0) return;
 
-  // Batched into one round trip (rather than a read-then-write per payment)
-  // since a decade of quarterly dividends is ~40 statements.
-  const statements = history.map((point) =>
-    env.DB.prepare(
-      `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-       VALUES (?, ?, ?, 'paid', ?)
-       ON CONFLICT(ticker, payment_date) DO UPDATE SET
-         amount_per_share = excluded.amount_per_share,
-         status = 'paid',
-         shares_at_payment = excluded.shares_at_payment`
-    ).bind(ticker, point.amount, point.date, shares)
-  );
+  const sharesHeldOn = (date: string) =>
+    lots.reduce((sum, lot) => sum + (!lot.purchase_date || lot.purchase_date <= date ? lot.shares : 0), 0);
 
-  const next = projectNextDividend(history);
-  if (next) {
+  // Full replace (not an incremental upsert) so lots added/edited/removed
+  // since the last sync are always reflected correctly.
+  const statements = [env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker)];
+
+  for (const point of history) {
+    const shares = sharesHeldOn(point.date);
+    if (shares <= 0) continue; // not owned yet as of this payment
     statements.push(
       env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'expected', ?)
-         ON CONFLICT(ticker, payment_date) DO NOTHING`
-      ).bind(ticker, next.amount, next.date, shares)
+         VALUES (?, ?, ?, 'paid', ?)`
+      ).bind(ticker, point.amount, point.date, shares)
+    );
+  }
+
+  const next = projectNextDividend(history);
+  if (next) {
+    const totalShares = lots.reduce((sum, lot) => sum + lot.shares, 0);
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
+         VALUES (?, ?, ?, 'expected', ?)`
+      ).bind(ticker, next.amount, next.date, totalShares)
     );
   }
 
@@ -448,7 +468,7 @@ app.post('/api/holdings', async (c) => {
 
   // Runs after the response is sent so adding a holding feels instant;
   // dividend history shows up moments later on the next refresh.
-  c.executionCtx.waitUntil(syncDividendsForHolding(c.env, normalizedTicker, shares).catch(() => {}));
+  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, normalizedTicker).catch(() => {}));
 
   return c.json({ id: result.meta.last_row_id }, 201);
 });
@@ -477,14 +497,23 @@ app.patch('/api/holdings/:id', async (c) => {
      WHERE id = ?`
   ).bind(ticker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
 
-  c.executionCtx.waitUntil(syncDividendsForHolding(c.env, ticker, shares).catch(() => {}));
+  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, ticker).catch(() => {}));
+  // If this lot moved to a different ticker, the old ticker's remaining
+  // lots (if any) also need their share-history recomputed.
+  if (existing.ticker !== ticker) {
+    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, existing.ticker).catch(() => {}));
+  }
 
   return c.json({ ok: true });
 });
 
 app.delete('/api/holdings/:id', async (c) => {
   const id = c.req.param('id');
+  const existing = await c.env.DB.prepare('SELECT ticker FROM holdings WHERE id = ?').bind(id).first<{ ticker: string }>();
   await c.env.DB.prepare('DELETE FROM holdings WHERE id = ?').bind(id).run();
+  if (existing) {
+    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, existing.ticker).catch(() => {}));
+  }
   return c.json({ ok: true });
 });
 
@@ -498,11 +527,11 @@ app.get('/api/dividends', async (c) => {
 });
 
 app.post('/api/dividends/sync-all', async (c) => {
-  const { results: holdings } = await c.env.DB.prepare('SELECT ticker, shares FROM holdings').all<{ ticker: string; shares: number }>();
-  for (const h of holdings) {
-    await syncDividendsForHolding(c.env, h.ticker, h.shares).catch(() => {});
+  const { results: tickers } = await c.env.DB.prepare('SELECT DISTINCT ticker FROM holdings').all<{ ticker: string }>();
+  for (const t of tickers) {
+    await syncDividendsForTicker(c.env, t.ticker).catch(() => {});
   }
-  return c.json({ ok: true, synced: holdings.length });
+  return c.json({ ok: true, synced: tickers.length });
 });
 
 // ---------- Ticker/name search (also resolves the market automatically) ----------
@@ -545,20 +574,27 @@ app.get('/api/history/:ticker', async (c) => {
 // ---------- Portfolio summary ----------
 
 app.get('/api/summary', async (c) => {
-  const { results: holdings } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker').all<Holding>();
+  const { results: rawHoldings } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker, purchase_date').all<Holding>();
   const fxRate = await getUsdIlsRate(c.env);
+
+  // A stock can be held across multiple purchase lots (bought more shares
+  // later at a different price/date) — group them into one entry per ticker
+  // for display, while keeping the individual lots for per-lot editing.
+  const lotsByTicker = new Map<string, Holding[]>();
+  for (const h of rawHoldings) {
+    if (!lotsByTicker.has(h.ticker)) lotsByTicker.set(h.ticker, []);
+    lotsByTicker.get(h.ticker)!.push(h);
+  }
 
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  // Only count dividends paid on/after each stock's purchase date — otherwise
-  // a stock's dividend history from before it was ever bought gets counted
-  // as if it were income the user actually received.
+  // shares_at_payment already accounts for which lots were owned by each
+  // payment date (see syncDividendsForTicker), so no join against holdings
+  // is needed here to avoid double-counting a ticker with multiple lots.
   const { results: paidLastYear } = await c.env.DB.prepare(
-    `SELECT dp.ticker, dp.amount_per_share, dp.shares_at_payment
-     FROM dividend_payments dp
-     LEFT JOIN holdings h ON h.ticker = dp.ticker
-     WHERE dp.status = 'paid' AND dp.payment_date >= ?
-       AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)`
+    `SELECT ticker, amount_per_share, shares_at_payment
+     FROM dividend_payments
+     WHERE status = 'paid' AND payment_date >= ?`
   ).bind(oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
 
   const dividendIncomeByTicker = new Map<string, number>();
@@ -570,20 +606,47 @@ app.get('/api/summary', async (c) => {
   let totalInvested = 0;
   let currentValue = 0;
   const holdingsWithPrice = [];
-  for (const h of holdings) {
-    const currency = currencyForTicker(h.ticker);
+  for (const [ticker, lots] of lotsByTicker) {
+    const shares = lots.reduce((sum, l) => sum + l.shares, 0);
+    const amount_invested = lots.reduce((sum, l) => sum + l.amount_invested, 0);
+    // Weighted-average purchase price across lots.
+    const purchase_price = shares > 0 ? amount_invested / shares : 0;
+    const purchase_date = lots.reduce<string | null>(
+      (earliest, l) => (l.purchase_date && (!earliest || l.purchase_date < earliest) ? l.purchase_date : earliest),
+      null
+    );
+    const market = lots[0].market;
+    const company_name = lots.find((l) => l.company_name)?.company_name ?? null;
+
+    const currency = currencyForTicker(ticker);
     const toILS = toILSFactor(currency, fxRate);
-    const price = await getQuote(c.env, h.ticker);
-    const nativeValue = (price ?? 0) * h.shares;
+    const price = await getQuote(c.env, ticker);
+    const nativeValue = (price ?? 0) * shares;
 
     currentValue += nativeValue * toILS;
-    totalInvested += h.amount_invested * toILS;
-    const gainPct = h.amount_invested > 0 ? ((nativeValue - h.amount_invested) / h.amount_invested) * 100 : 0;
+    totalInvested += amount_invested * toILS;
+    const gainPct = amount_invested > 0 ? ((nativeValue - amount_invested) / amount_invested) * 100 : 0;
     // Trailing-12-month dividend income relative to current market value
     // (standard dividend yield, not yield on cost).
-    const stockDividendIncome = dividendIncomeByTicker.get(h.ticker) ?? 0;
+    const stockDividendIncome = dividendIncomeByTicker.get(ticker) ?? 0;
     const dividendYieldPct = nativeValue > 0 ? (stockDividendIncome / nativeValue) * 100 : 0;
-    holdingsWithPrice.push({ ...h, currency, currentPrice: price, currentValue: nativeValue, gainPct, dividendYieldPct });
+    holdingsWithPrice.push({
+      id: lots[0].id,
+      ticker,
+      market,
+      company_name,
+      shares,
+      purchase_price,
+      amount_invested,
+      purchase_date,
+      notes: null,
+      currency,
+      currentPrice: price,
+      currentValue: nativeValue,
+      gainPct,
+      dividendYieldPct,
+      lots,
+    });
   }
 
   const annualDividendIncome = paidLastYear.reduce((sum, p) => {
@@ -614,12 +677,13 @@ app.get('/api/summary', async (c) => {
 // ---------- Dividend income growth (month over month, year over year) ----------
 
 app.get('/api/dividends/income-growth', async (c) => {
+  // shares_at_payment already reflects which lots were owned by each
+  // payment date (see syncDividendsForTicker), so no join is needed.
   const { results: paid } = await c.env.DB.prepare(
-    `SELECT dp.ticker, dp.amount_per_share, dp.payment_date, dp.shares_at_payment
-     FROM dividend_payments dp
-     LEFT JOIN holdings h ON h.ticker = dp.ticker
-     WHERE dp.status = 'paid' AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)
-     ORDER BY dp.payment_date`
+    `SELECT ticker, amount_per_share, payment_date, shares_at_payment
+     FROM dividend_payments
+     WHERE status = 'paid'
+     ORDER BY payment_date`
   ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
   const fxRate = await getUsdIlsRate(c.env);
 
@@ -648,20 +712,27 @@ app.get('/api/dividends/income-growth', async (c) => {
 });
 
 app.get('/api/dividends/stats', async (c) => {
+  // shares_at_payment already reflects which lots were owned by each
+  // payment date (see syncDividendsForTicker), so no join is needed for the
+  // sums — market/company_name are looked up separately below instead of via
+  // a SQL join, since a ticker with multiple lots would otherwise duplicate
+  // each payment row once per matching lot.
   const { results: paid } = await c.env.DB.prepare(
-    `SELECT dp.ticker, dp.amount_per_share, dp.payment_date, dp.shares_at_payment, h.market, h.company_name
-     FROM dividend_payments dp
-     LEFT JOIN holdings h ON h.ticker = dp.ticker
-     WHERE dp.status = 'paid' AND (h.purchase_date IS NULL OR dp.payment_date >= h.purchase_date)`
-  ).all<{
-    ticker: string;
-    amount_per_share: number;
-    payment_date: string;
-    shares_at_payment: number | null;
-    market: Market | null;
-    company_name: string | null;
-  }>();
+    `SELECT ticker, amount_per_share, payment_date, shares_at_payment
+     FROM dividend_payments
+     WHERE status = 'paid'`
+  ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
   const fxRate = await getUsdIlsRate(c.env);
+
+  const { results: tickerInfoRows } = await c.env.DB.prepare(
+    'SELECT ticker, market, company_name FROM holdings'
+  ).all<{ ticker: string; market: Market; company_name: string | null }>();
+  const tickerInfo = new Map<string, { market: Market; company_name: string | null }>();
+  for (const row of tickerInfoRows) {
+    if (!tickerInfo.has(row.ticker) || row.company_name) {
+      tickerInfo.set(row.ticker, { market: row.market, company_name: row.company_name });
+    }
+  }
 
   const thisYear = String(new Date().getFullYear());
   const lastYear = String(new Date().getFullYear() - 1);
@@ -674,7 +745,8 @@ app.get('/api/dividends/stats', async (c) => {
   const byTicker = new Map<string, { ticker: string; market: Market; company_name: string | null; total: number }>();
 
   for (const p of paid) {
-    const market: Market = p.market === 'IL' ? 'IL' : 'US';
+    const info = tickerInfo.get(p.ticker);
+    const market: Market = info?.market === 'IL' ? 'IL' : 'US';
     const toILS = toILSFactor(currencyForTicker(p.ticker), fxRate);
     const amountILS = p.amount_per_share * (p.shares_at_payment ?? 0) * toILS;
 
@@ -688,7 +760,7 @@ app.get('/api/dividends/stats', async (c) => {
 
     const existing = byTicker.get(p.ticker);
     if (existing) existing.total += amountILS;
-    else byTicker.set(p.ticker, { ticker: p.ticker, market, company_name: p.company_name, total: amountILS });
+    else byTicker.set(p.ticker, { ticker: p.ticker, market, company_name: info?.company_name ?? null, total: amountILS });
   }
 
   const topPayers = [...byTicker.values()].sort((a, b) => b.total - a.total);

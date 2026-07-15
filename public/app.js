@@ -89,6 +89,7 @@ function buildHoldingRow(h) {
   const subParts = [];
   if (showCompanyName) subParts.push(bareTicker);
   subParts.push(`${h.shares} מניות`);
+  if ((h.lots?.length ?? 1) > 1) subParts.push(`${h.lots.length} רכישות`);
   subParts.push(`תשואת דיב' ${yieldPct.toFixed(1)}%`);
 
   const row = document.createElement('div');
@@ -199,26 +200,48 @@ function buildHoldingDetail(holding) {
   const wrap = document.createElement('div');
   wrap.className = 'holding-detail';
 
-  const actions = `
-    <div class="holding-detail-actions">
-      <button class="edit-btn" data-id="${holding.id}">✎ ערוך</button>
-      <button class="delete-btn" data-id="${holding.id}">🗑 מחק</button>
-    </div>
-  `;
+  const lots = holding.lots ?? [];
+  const hasMultipleLots = lots.length > 1;
 
   const purchaseInfo = `
     <div class="purchase-info">
       <div class="purchase-stat">
-        <span class="purchase-stat-label">מחיר קנייה</span>
+        <span class="purchase-stat-label">${hasMultipleLots ? 'מחיר ממוצע' : 'מחיר קנייה'}</span>
         <span class="purchase-stat-value">${fmtMoney(toDisplay(holding.purchase_price), displayCurrency)}</span>
       </div>
       <div class="purchase-stat">
-        <span class="purchase-stat-label">שווי קנייה</span>
+        <span class="purchase-stat-label">${hasMultipleLots ? 'שווי קנייה כולל' : 'שווי קנייה'}</span>
         <span class="purchase-stat-value">${fmtMoney(toDisplay(holding.amount_invested), displayCurrency)}</span>
       </div>
       <div class="purchase-stat">
-        <span class="purchase-stat-label">תאריך קנייה</span>
+        <span class="purchase-stat-label">${hasMultipleLots ? 'כניסה ראשונה' : 'תאריך קנייה'}</span>
         <span class="purchase-stat-value">${holding.purchase_date ? fmtDate(holding.purchase_date) : '—'}</span>
+      </div>
+    </div>
+  `;
+
+  // Each purchase is its own lot with its own date/price, since the same
+  // stock can be bought more than once (e.g. once in Aug and again in Jan) —
+  // editing/deleting acts on a specific lot, not the combined position.
+  const lotsSection = `
+    <div class="lots-section">
+      <div class="lots-header">
+        <h3>רכישות (${lots.length})</h3>
+        <button type="button" class="add-lot-btn" data-ticker="${holding.ticker}">+ הוסף רכישה</button>
+      </div>
+      <div class="lot-list">
+        ${lots.map((lot) => `
+          <div class="lot-row">
+            <div class="lot-row-info">
+              <span class="lot-row-shares">${lot.shares} מניות · ${fmtMoney(toDisplay(lot.purchase_price), displayCurrency)}</span>
+              <span class="lot-row-date">${lot.purchase_date ? fmtDate(lot.purchase_date) : 'ללא תאריך'}</span>
+            </div>
+            <div class="lot-row-actions">
+              <button class="edit-btn" data-id="${lot.id}" aria-label="ערוך רכישה">✎</button>
+              <button class="delete-btn" data-id="${lot.id}" aria-label="מחק רכישה">🗑</button>
+            </div>
+          </div>
+        `).join('')}
       </div>
     </div>
   `;
@@ -270,7 +293,7 @@ function buildHoldingDetail(holding) {
     `;
   }
 
-  wrap.innerHTML = actions + purchaseInfo + dividendSection;
+  wrap.innerHTML = purchaseInfo + lotsSection + dividendSection;
   return wrap;
 }
 
@@ -436,7 +459,13 @@ suggestionsList.addEventListener('click', (e) => {
   companyNameInput.value = name;
   resolvedViaSearch = true;
   updateHoldingPriceUnit();
-  resolvedText.textContent = `נבחר: ${name} (${market === 'IL' ? 'ת"א' : 'ארה"ב'})`;
+
+  // Already own this ticker and not currently editing a specific lot?
+  // Make it clear this will add another purchase rather than replace it.
+  const alreadyOwned = !holdingEditIdInput.value && lastHoldings.some((h) => h.ticker === symbol);
+  resolvedText.textContent = alreadyOwned
+    ? `נבחר: ${name} — כבר יש לך מניות מהמנייה הזו, זו תתווסף כרכישה נוספת`
+    : `נבחר: ${name} (${market === 'IL' ? 'ת"א' : 'ארה"ב'})`;
   resolvedText.classList.remove('hidden');
   hideSuggestions();
 });
@@ -502,23 +531,44 @@ holdingCancelEditBtn.addEventListener('click', exitEditMode);
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.edit-btn');
   if (!btn) return;
-  const holding = lastHoldings.find((h) => String(h.id) === btn.dataset.id);
-  if (!holding) return;
+  // Editing acts on a specific purchase lot, not the combined position.
+  const lot = lastHoldings.flatMap((h) => h.lots ?? []).find((l) => String(l.id) === btn.dataset.id);
+  if (!lot) return;
 
   clearError('holding-error');
-  holdingEditIdInput.value = holding.id;
+  holdingEditIdInput.value = lot.id;
+  tickerInput.value = lot.ticker;
+  marketInput.value = lot.market;
+  companyNameInput.value = lot.company_name ?? '';
+  resolvedViaSearch = true;
+  updateHoldingPriceUnit();
+  resolvedText.classList.add('hidden');
+  holdingForm.shares.value = lot.shares;
+  holdingForm.purchase_price.value = lot.purchase_price;
+  holdingForm.purchase_date.value = lot.purchase_date ?? '';
+  holdingSubmitBtn.textContent = 'עדכן רכישה';
+  holdingCancelEditBtn.classList.remove('hidden');
+  holdingForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.add-lot-btn');
+  if (!btn) return;
+  const holding = lastHoldings.find((h) => h.ticker === btn.dataset.ticker);
+  if (!holding) return;
+
+  exitEditMode();
+  clearError('holding-error');
   tickerInput.value = holding.ticker;
   marketInput.value = holding.market;
   companyNameInput.value = holding.company_name ?? '';
   resolvedViaSearch = true;
   updateHoldingPriceUnit();
-  resolvedText.classList.add('hidden');
-  holdingForm.shares.value = holding.shares;
-  holdingForm.purchase_price.value = holding.purchase_price;
-  holdingForm.purchase_date.value = holding.purchase_date ?? '';
-  holdingSubmitBtn.textContent = 'עדכן מניה';
-  holdingCancelEditBtn.classList.remove('hidden');
+  const label = holding.market === 'IL' && holding.company_name ? holding.company_name : holding.ticker.replace('.TA', '');
+  resolvedText.textContent = `מוסיף רכישה נוספת עבור ${label}`;
+  resolvedText.classList.remove('hidden');
   holdingForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('holding-shares-input').focus();
 });
 
 // ---- "Don't remember the purchase date? search by price" helper ----
