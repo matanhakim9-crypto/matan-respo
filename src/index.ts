@@ -413,20 +413,69 @@ async function validatePurchasePrice(ticker: string, purchaseDate: string | null
 // ---------- Dividend auto-discovery ----------
 
 type DivPoint = { date: string; amount: number };
+// exDate drives eligibility (you must own the stock before the ex-dividend
+// date to receive that payment); payDate is what gets displayed/stored as
+// the payment date — they differ once FMP enrichment succeeds, and are
+// identical (both the ex-date) when it doesn't.
+type EnrichedDivPoint = { exDate: string; payDate: string; amount: number };
 
-async function fetchDividendHistory(ticker: string): Promise<DivPoint[]> {
+let cachedFmpKey: string | null | undefined;
+
+async function getFmpApiKey(env: Bindings): Promise<string | null> {
+  if (cachedFmpKey !== undefined) return cachedFmpKey;
+  try {
+    const row = await env.DB.prepare(`SELECT value FROM app_settings WHERE key = 'fmp_api_key'`).first<{ value: string }>();
+    cachedFmpKey = row?.value ?? null;
+  } catch {
+    cachedFmpKey = null;
+  }
+  return cachedFmpKey;
+}
+
+// Yahoo's dividend-events feed only exposes the ex-dividend date, not the
+// date cash actually lands. Financial Modeling Prep's free-tier dividends
+// endpoint carries both, so US tickers are enriched with it on a
+// best-effort basis; any failure (missing key, blocked request, unexpected
+// shape, no match) silently falls back to the ex-dividend date.
+async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const apiKey = await getFmpApiKey(env);
+  if (!apiKey) return map;
+  try {
+    const url = `https://financialmodelingprep.com/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) return map;
+    const data = await res.json<any>();
+    if (!Array.isArray(data)) return map;
+    for (const row of data) {
+      const exDate = typeof row?.date === 'string' ? row.date.slice(0, 10) : null;
+      const payDate = typeof row?.paymentDate === 'string' && row.paymentDate ? row.paymentDate.slice(0, 10) : null;
+      if (exDate && payDate) map.set(exDate, payDate);
+    }
+  } catch {
+    // best-effort only
+  }
+  return map;
+}
+
+async function fetchDividendHistory(env: Bindings, ticker: string): Promise<EnrichedDivPoint[]> {
   const result = await fetchYahooChart(ticker, { range: '10y' }, 'div');
   const raw = result?.events?.dividends;
   if (!raw) return [];
-  return Object.values(raw as Record<string, { amount: number; date: number }>)
-    .map((p) => ({ date: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const points = Object.values(raw as Record<string, { amount: number; date: number }>)
+    .map((p) => ({ exDate: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
+    .sort((a, b) => a.exDate.localeCompare(b.exDate));
+
+  const payDates = ticker.endsWith('.TA') ? new Map<string, string>() : await fetchFmpPaymentDates(env, ticker);
+
+  return points.map((p) => ({ exDate: p.exDate, payDate: payDates.get(p.exDate) ?? p.exDate, amount: p.amount }));
 }
 
 // Companies usually keep a steady per-share amount and cadence between
 // payments, so the next expected dividend is estimated from the gap and
 // amount of the last two historical payments rather than a separate,
-// less-reliable Yahoo endpoint.
+// less-reliable Yahoo endpoint. Projects off the payment-date series so the
+// projected date is consistent with what's stored for past payments.
 function projectNextDividend(history: DivPoint[]): DivPoint | null {
   if (history.length < 2) return null;
   const last = history[history.length - 1];
@@ -454,31 +503,33 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
     return;
   }
 
-  const history = await fetchDividendHistory(ticker);
+  const history = await fetchDividendHistory(env, ticker);
   if (history.length === 0) return;
 
   // Real dividend eligibility requires owning the stock BEFORE the ex-dividend
-  // date (`date` here) — buying on the ex-date itself is already too late, the
-  // seller keeps that payment. Hence strictly-less-than, not <=.
-  const sharesHeldOn = (date: string) =>
-    lots.reduce((sum, lot) => sum + (!lot.purchase_date || lot.purchase_date < date ? lot.shares : 0), 0);
+  // date — buying on the ex-date itself is already too late, the seller
+  // keeps that payment. Hence strictly-less-than, not <=. Eligibility is
+  // always checked against the ex-date, even though the payment date (once
+  // enriched) is what gets stored/displayed.
+  const sharesHeldOn = (exDate: string) =>
+    lots.reduce((sum, lot) => sum + (!lot.purchase_date || lot.purchase_date < exDate ? lot.shares : 0), 0);
 
   // Full replace (not an incremental upsert) so lots added/edited/removed
   // since the last sync are always reflected correctly.
   const statements = [env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker)];
 
   for (const point of history) {
-    const shares = sharesHeldOn(point.date);
+    const shares = sharesHeldOn(point.exDate);
     if (shares <= 0) continue; // not owned yet as of this payment
     statements.push(
       env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
          VALUES (?, ?, ?, 'paid', ?)`
-      ).bind(ticker, point.amount, point.date, shares)
+      ).bind(ticker, point.amount, point.payDate, shares)
     );
   }
 
-  const next = projectNextDividend(history);
+  const next = projectNextDividend(history.map((p) => ({ date: p.payDate, amount: p.amount })));
   if (next) {
     const totalShares = lots.reduce((sum, lot) => sum + lot.shares, 0);
     statements.push(
