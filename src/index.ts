@@ -1,7 +1,13 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 
 type Bindings = {
   DB: D1Database;
+};
+
+type Variables = {
+  userId: number;
+  username: string;
 };
 
 type Market = 'US' | 'IL';
@@ -16,6 +22,7 @@ type Holding = {
   amount_invested: number;
   purchase_date: string | null;
   notes: string | null;
+  user_id: number;
 };
 
 type DividendPayment = {
@@ -25,13 +32,142 @@ type DividendPayment = {
   payment_date: string;
   status: 'expected' | 'paid';
   shares_at_payment: number | null;
+  user_id: number;
 };
 
 const QUOTE_CACHE_TTL_MS = 15 * 60 * 1000;
 const YAHOO_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 const FALLBACK_USD_ILS = 3.7;
+const SESSION_COOKIE = 'session';
+const SESSION_DAYS = 30;
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+// ---------- Auth ----------
+
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+// PBKDF2 via Web Crypto (available in Workers) rather than bcrypt, which
+// needs a native/WASM dependency this runtime doesn't have.
+async function hashPassword(password: string, saltHex?: string): Promise<{ hash: string; salt: string }> {
+  const salt = saltHex ? hexToBytes(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    256
+  );
+  return { hash: bytesToHex(new Uint8Array(bits)), salt: bytesToHex(salt) };
+}
+
+async function verifyPassword(password: string, hash: string, salt: string): Promise<boolean> {
+  const computed = await hashPassword(password, salt);
+  if (computed.hash.length !== hash.length) return false;
+  // Constant-time-ish comparison so a failed check doesn't leak timing info.
+  let diff = 0;
+  for (let i = 0; i < hash.length; i++) diff |= computed.hash.charCodeAt(i) ^ hash.charCodeAt(i);
+  return diff === 0;
+}
+
+async function createSession(env: Bindings, userId: number): Promise<string> {
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
+  const now = new Date();
+  const expires = new Date(now.getTime() + SESSION_DAYS * 24 * 3600 * 1000);
+  await env.DB.prepare(
+    `INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`
+  ).bind(token, userId, now.toISOString(), expires.toISOString()).run();
+  return token;
+}
+
+async function getUserFromSession(env: Bindings, token: string | undefined): Promise<{ id: number; username: string } | null> {
+  if (!token) return null;
+  const row = await env.DB.prepare(
+    `SELECT u.id, u.username, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?`
+  ).bind(token).first<{ id: number; username: string; expires_at: string }>();
+  if (!row) return null;
+  if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  return { id: row.id, username: row.username };
+}
+
+function setSessionCookie(c: Context, token: string) {
+  setCookie(c, SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    path: '/',
+    maxAge: SESSION_DAYS * 24 * 3600,
+  });
+}
+
+app.post('/api/auth/register', async (c) => {
+  const { username, password } = await c.req.json<{ username?: string; password?: string }>();
+  const trimmedUsername = username?.trim() ?? '';
+  if (!trimmedUsername || !password || password.length < 6) {
+    return c.json({ error: 'שם משתמש וסיסמה (לפחות 6 תווים) נדרשים' }, 400);
+  }
+  const existing = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(trimmedUsername).first();
+  if (existing) return c.json({ error: 'שם המשתמש הזה כבר תפוס' }, 409);
+
+  const { hash, salt } = await hashPassword(password);
+  const result = await c.env.DB.prepare(
+    `INSERT INTO users (username, password_hash, password_salt, created_at) VALUES (?, ?, ?, ?)`
+  ).bind(trimmedUsername, hash, salt, new Date().toISOString()).run();
+  const userId = result.meta.last_row_id as number;
+
+  const token = await createSession(c.env, userId);
+  setSessionCookie(c, token);
+  return c.json({ id: userId, username: trimmedUsername }, 201);
+});
+
+app.post('/api/auth/login', async (c) => {
+  const { username, password } = await c.req.json<{ username?: string; password?: string }>();
+  if (!username || !password) return c.json({ error: 'שם משתמש וסיסמה נדרשים' }, 400);
+  const user = await c.env.DB.prepare(
+    'SELECT id, username, password_hash, password_salt FROM users WHERE username = ?'
+  ).bind(username.trim()).first<{ id: number; username: string; password_hash: string; password_salt: string }>();
+  if (!user || !(await verifyPassword(password, user.password_hash, user.password_salt))) {
+    return c.json({ error: 'שם משתמש או סיסמה שגויים' }, 401);
+  }
+
+  const token = await createSession(c.env, user.id);
+  setSessionCookie(c, token);
+  return c.json({ id: user.id, username: user.username });
+});
+
+app.post('/api/auth/logout', async (c) => {
+  const token = getCookie(c, SESSION_COOKIE);
+  if (token) await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(token).run();
+  deleteCookie(c, SESSION_COOKIE, { path: '/' });
+  return c.json({ ok: true });
+});
+
+app.get('/api/auth/me', async (c) => {
+  const token = getCookie(c, SESSION_COOKIE);
+  const user = await getUserFromSession(c.env, token);
+  if (!user) return c.json({ error: 'not authenticated' }, 401);
+  return c.json(user);
+});
+
+// Everything under /api/ other than the auth routes above requires a valid
+// session — each handler reads the authenticated user id via c.get('userId')
+// to scope its queries instead of trusting a client-supplied id.
+app.use('/api/*', async (c, next) => {
+  if (c.req.path.startsWith('/api/auth/')) return next();
+  const token = getCookie(c, SESSION_COOKIE);
+  const user = await getUserFromSession(c.env, token);
+  if (!user) return c.json({ error: 'התחברות נדרשת' }, 401);
+  c.set('userId', user.id);
+  c.set('username', user.username);
+  await next();
+});
 
 function normalizeTicker(rawTicker: string, market: Market): string {
   const t = rawTicker.trim().toUpperCase();
@@ -492,14 +628,14 @@ function projectNextDividend(history: DivPoint[]): DivPoint | null {
 // per ticker rather than per lot — and each payment's shares_at_payment
 // reflects only the lots already purchased by that payment's date, not the
 // portfolio's current total.
-async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<void> {
+async function syncDividendsForTicker(env: Bindings, userId: number, ticker: string): Promise<void> {
   const { results: lots } = await env.DB.prepare(
-    'SELECT shares, purchase_date FROM holdings WHERE ticker = ?'
-  ).bind(ticker).all<{ shares: number; purchase_date: string | null }>();
+    'SELECT shares, purchase_date FROM holdings WHERE user_id = ? AND ticker = ?'
+  ).bind(userId, ticker).all<{ shares: number; purchase_date: string | null }>();
 
   if (lots.length === 0) {
     // Every lot for this ticker was removed — nothing left to show history for.
-    await env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker).run();
+    await env.DB.prepare('DELETE FROM dividend_payments WHERE user_id = ? AND ticker = ?').bind(userId, ticker).run();
     return;
   }
 
@@ -516,7 +652,7 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
 
   // Full replace (not an incremental upsert) so lots added/edited/removed
   // since the last sync are always reflected correctly.
-  const statements = [env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker)];
+  const statements = [env.DB.prepare('DELETE FROM dividend_payments WHERE user_id = ? AND ticker = ?').bind(userId, ticker)];
 
   // Yahoo's events.dividends only lists dividends whose ex-date has already
   // passed, so it always looked "paid" — but once the real payment date is
@@ -533,9 +669,9 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
     if (status === 'expected') hasUpcomingFromHistory = true;
     statements.push(
       env.DB.prepare(
-        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, ?, ?)`
-      ).bind(ticker, point.amount, point.payDate, status, shares)
+        `INSERT INTO dividend_payments (user_id, ticker, amount_per_share, payment_date, status, shares_at_payment)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(userId, ticker, point.amount, point.payDate, status, shares)
     );
   }
 
@@ -549,9 +685,9 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
     const totalShares = lots.reduce((sum, lot) => sum + lot.shares, 0);
     statements.push(
       env.DB.prepare(
-        `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'expected', ?)`
-      ).bind(ticker, next.amount, next.date, totalShares)
+        `INSERT INTO dividend_payments (user_id, ticker, amount_per_share, payment_date, status, shares_at_payment)
+         VALUES (?, ?, ?, ?, 'expected', ?)`
+      ).bind(userId, ticker, next.amount, next.date, totalShares)
     );
   }
 
@@ -561,11 +697,13 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
 // ---------- Holdings ----------
 
 app.get('/api/holdings', async (c) => {
-  const { results } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker').all<Holding>();
+  const { results } = await c.env.DB.prepare('SELECT * FROM holdings WHERE user_id = ? ORDER BY market, ticker')
+    .bind(c.get('userId')).all<Holding>();
   return c.json(results);
 });
 
 app.post('/api/holdings', async (c) => {
+  const userId = c.get('userId');
   const body = await c.req.json<Partial<Holding> & { market?: string }>();
   const { ticker, shares, purchase_price, purchase_date, notes, company_name } = body;
   const market: Market = body.market === 'IL' ? 'IL' : 'US';
@@ -579,20 +717,21 @@ app.post('/api/holdings', async (c) => {
 
   const amount_invested = shares * purchase_price;
   const result = await c.env.DB.prepare(
-    `INSERT INTO holdings (ticker, market, company_name, shares, purchase_price, amount_invested, purchase_date, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(normalizedTicker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
+    `INSERT INTO holdings (user_id, ticker, market, company_name, shares, purchase_price, amount_invested, purchase_date, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(userId, normalizedTicker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date ?? null, notes ?? null).run();
 
   // Runs after the response is sent so adding a holding feels instant;
   // dividend history shows up moments later on the next refresh.
-  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, normalizedTicker).catch(() => {}));
+  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, userId, normalizedTicker).catch(() => {}));
 
   return c.json({ id: result.meta.last_row_id }, 201);
 });
 
 app.patch('/api/holdings/:id', async (c) => {
+  const userId = c.get('userId');
   const id = c.req.param('id');
-  const existing = await c.env.DB.prepare('SELECT * FROM holdings WHERE id = ?').bind(id).first<Holding>();
+  const existing = await c.env.DB.prepare('SELECT * FROM holdings WHERE id = ? AND user_id = ?').bind(id, userId).first<Holding>();
   if (!existing) return c.json({ error: 'holding not found' }, 404);
 
   const body = await c.req.json<Partial<Holding> & { market?: string }>();
@@ -615,25 +754,26 @@ app.patch('/api/holdings/:id', async (c) => {
 
   await c.env.DB.prepare(
     `UPDATE holdings SET ticker = ?, market = ?, company_name = ?, shares = ?, purchase_price = ?, amount_invested = ?, purchase_date = ?, notes = ?
-     WHERE id = ?`
-  ).bind(ticker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date, notes, id).run();
+     WHERE id = ? AND user_id = ?`
+  ).bind(ticker, market, company_name ?? null, shares, purchase_price, amount_invested, purchase_date, notes, id, userId).run();
 
-  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, ticker).catch(() => {}));
+  c.executionCtx.waitUntil(syncDividendsForTicker(c.env, userId, ticker).catch(() => {}));
   // If this lot moved to a different ticker, the old ticker's remaining
   // lots (if any) also need their share-history recomputed.
   if (existing.ticker !== ticker) {
-    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, existing.ticker).catch(() => {}));
+    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, userId, existing.ticker).catch(() => {}));
   }
 
   return c.json({ ok: true });
 });
 
 app.delete('/api/holdings/:id', async (c) => {
+  const userId = c.get('userId');
   const id = c.req.param('id');
-  const existing = await c.env.DB.prepare('SELECT ticker FROM holdings WHERE id = ?').bind(id).first<{ ticker: string }>();
-  await c.env.DB.prepare('DELETE FROM holdings WHERE id = ?').bind(id).run();
+  const existing = await c.env.DB.prepare('SELECT ticker FROM holdings WHERE id = ? AND user_id = ?').bind(id, userId).first<{ ticker: string }>();
+  await c.env.DB.prepare('DELETE FROM holdings WHERE id = ? AND user_id = ?').bind(id, userId).run();
   if (existing) {
-    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, existing.ticker).catch(() => {}));
+    c.executionCtx.waitUntil(syncDividendsForTicker(c.env, userId, existing.ticker).catch(() => {}));
   }
   return c.json({ ok: true });
 });
@@ -642,15 +782,17 @@ app.delete('/api/holdings/:id', async (c) => {
 
 app.get('/api/dividends', async (c) => {
   const { results } = await c.env.DB.prepare(
-    'SELECT * FROM dividend_payments ORDER BY payment_date'
-  ).all<DividendPayment>();
+    'SELECT * FROM dividend_payments WHERE user_id = ? ORDER BY payment_date'
+  ).bind(c.get('userId')).all<DividendPayment>();
   return c.json(results);
 });
 
 app.post('/api/dividends/sync-all', async (c) => {
-  const { results: tickers } = await c.env.DB.prepare('SELECT DISTINCT ticker FROM holdings').all<{ ticker: string }>();
+  const userId = c.get('userId');
+  const { results: tickers } = await c.env.DB.prepare('SELECT DISTINCT ticker FROM holdings WHERE user_id = ?')
+    .bind(userId).all<{ ticker: string }>();
   for (const t of tickers) {
-    await syncDividendsForTicker(c.env, t.ticker).catch(() => {});
+    await syncDividendsForTicker(c.env, userId, t.ticker).catch(() => {});
   }
   return c.json({ ok: true, synced: tickers.length });
 });
@@ -695,7 +837,9 @@ app.get('/api/history/:ticker', async (c) => {
 // ---------- Portfolio summary ----------
 
 app.get('/api/summary', async (c) => {
-  const { results: rawHoldings } = await c.env.DB.prepare('SELECT * FROM holdings ORDER BY market, ticker, purchase_date').all<Holding>();
+  const userId = c.get('userId');
+  const { results: rawHoldings } = await c.env.DB.prepare('SELECT * FROM holdings WHERE user_id = ? ORDER BY market, ticker, purchase_date')
+    .bind(userId).all<Holding>();
   const fxRate = await getUsdIlsRate(c.env);
 
   // A stock can be held across multiple purchase lots (bought more shares
@@ -715,8 +859,8 @@ app.get('/api/summary', async (c) => {
   const { results: paidLastYear } = await c.env.DB.prepare(
     `SELECT ticker, amount_per_share, shares_at_payment
      FROM dividend_payments
-     WHERE status = 'paid' AND payment_date >= ?`
-  ).bind(oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
+     WHERE user_id = ? AND status = 'paid' AND payment_date >= ?`
+  ).bind(userId, oneYearAgo.toISOString().slice(0, 10)).all<{ ticker: string; amount_per_share: number; shares_at_payment: number | null }>();
 
   const dividendIncomeByTicker = new Map<string, number>();
   for (const p of paidLastYear) {
@@ -803,9 +947,9 @@ app.get('/api/dividends/income-growth', async (c) => {
   const { results: paid } = await c.env.DB.prepare(
     `SELECT ticker, amount_per_share, payment_date, shares_at_payment
      FROM dividend_payments
-     WHERE status = 'paid'
+     WHERE user_id = ? AND status = 'paid'
      ORDER BY payment_date`
-  ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
+  ).bind(c.get('userId')).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
   const fxRate = await getUsdIlsRate(c.env);
 
   const byMonth = new Map<string, number>();
@@ -838,16 +982,17 @@ app.get('/api/dividends/stats', async (c) => {
   // sums — market/company_name are looked up separately below instead of via
   // a SQL join, since a ticker with multiple lots would otherwise duplicate
   // each payment row once per matching lot.
+  const userId = c.get('userId');
   const { results: paid } = await c.env.DB.prepare(
     `SELECT ticker, amount_per_share, payment_date, shares_at_payment
      FROM dividend_payments
-     WHERE status = 'paid'`
-  ).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
+     WHERE user_id = ? AND status = 'paid'`
+  ).bind(userId).all<{ ticker: string; amount_per_share: number; payment_date: string; shares_at_payment: number | null }>();
   const fxRate = await getUsdIlsRate(c.env);
 
   const { results: tickerInfoRows } = await c.env.DB.prepare(
-    'SELECT ticker, market, company_name FROM holdings'
-  ).all<{ ticker: string; market: Market; company_name: string | null }>();
+    'SELECT ticker, market, company_name FROM holdings WHERE user_id = ?'
+  ).bind(userId).all<{ ticker: string; market: Market; company_name: string | null }>();
   const tickerInfo = new Map<string, { market: Market; company_name: string | null }>();
   for (const row of tickerInfoRows) {
     if (!tickerInfo.has(row.ticker) || row.company_name) {

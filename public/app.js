@@ -29,11 +29,101 @@ async function api(path, options) {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
   });
+  // A session that expired mid-use (not the initial /api/auth/me check)
+  // should drop back to the login screen instead of leaving the app stuck
+  // showing fetch errors everywhere.
+  if (res.status === 401 && path !== '/api/auth/me') {
+    showAuthPage();
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `${res.status} ${res.statusText}`);
   }
   return res.status === 204 ? null : res.json();
+}
+
+// ---- Auth (login / register / logout) ----
+
+let authMode = 'login';
+
+function showAuthPage() {
+  document.getElementById('auth-page').classList.remove('hidden');
+  document.getElementById('app-main').classList.add('hidden');
+  document.getElementById('header-username').classList.add('hidden');
+  document.getElementById('logout-btn').classList.add('hidden');
+}
+
+function showAppForUser(username) {
+  document.getElementById('auth-page').classList.add('hidden');
+  document.getElementById('app-main').classList.remove('hidden');
+  const usernameEl = document.getElementById('header-username');
+  usernameEl.textContent = username;
+  usernameEl.classList.remove('hidden');
+  document.getElementById('logout-btn').classList.remove('hidden');
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const title = document.getElementById('auth-title');
+  const submitBtn = document.getElementById('auth-submit-btn');
+  const toggleBtn = document.getElementById('auth-toggle-btn');
+  const passwordInput = document.getElementById('auth-password');
+  if (mode === 'register') {
+    title.textContent = 'הרשמה';
+    submitBtn.textContent = 'הרשמה';
+    toggleBtn.textContent = 'כבר יש לך חשבון? התחברות';
+    passwordInput.autocomplete = 'new-password';
+  } else {
+    title.textContent = 'התחברות';
+    submitBtn.textContent = 'התחברות';
+    toggleBtn.textContent = 'אין לך חשבון? הרשמה כאן';
+    passwordInput.autocomplete = 'current-password';
+  }
+  document.getElementById('auth-error').classList.add('hidden');
+}
+
+document.getElementById('auth-toggle-btn').addEventListener('click', () => {
+  setAuthMode(authMode === 'login' ? 'register' : 'login');
+});
+
+document.getElementById('auth-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById('auth-error');
+  errorEl.classList.add('hidden');
+  const username = document.getElementById('auth-username').value.trim();
+  const password = document.getElementById('auth-password').value;
+  try {
+    const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const user = await api(endpoint, { method: 'POST', body: JSON.stringify({ username, password }) });
+    document.getElementById('auth-form').reset();
+    showAppForUser(user.username);
+    await refreshAll();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.remove('hidden');
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  try {
+    await api('/api/auth/logout', { method: 'POST' });
+  } catch {
+    // ignore — clearing local state below regardless
+  }
+  lastHoldings = [];
+  lastDividends = [];
+  lastStats = null;
+  showAuthPage();
+});
+
+async function initAuth() {
+  try {
+    const user = await api('/api/auth/me');
+    showAppForUser(user.username);
+    await refreshAll();
+  } catch {
+    showAuthPage();
+  }
 }
 
 let lastHoldings = [];
@@ -1078,4 +1168,4 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-refreshAll().catch((err) => console.error(err));
+initAuth().catch((err) => console.error(err));

@@ -27,9 +27,31 @@
       <circle cx="63" cy="41" r="34" fill="url(#logo-coin-grad)" stroke="rgba(255,255,255,0.25)" stroke-width="5" />
     </svg>
     <h1>Dividend Tracker</h1>
+    <span id="header-username" class="header-username hidden"></span>
+    <button type="button" id="logout-btn" class="logout-btn hidden">התנתקות</button>
   </header>
 
-  <main>
+  <div id="auth-page" class="auth-page hidden">
+    <div class="auth-card">
+      <h2 id="auth-title">התחברות</h2>
+      <p class="hint" id="auth-subtitle">התחבר כדי לראות את תיק ההשקעות שלך.</p>
+      <form id="auth-form">
+        <div class="field">
+          <label for="auth-username">שם משתמש</label>
+          <input id="auth-username" name="username" autocomplete="username" required maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="auth-password">סיסמה</label>
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="6" />
+        </div>
+        <p id="auth-error" class="form-error hidden"></p>
+        <button type="submit" id="auth-submit-btn">התחברות</button>
+      </form>
+      <button type="button" id="auth-toggle-btn" class="link-btn">אין לך חשבון? הרשמה כאן</button>
+    </div>
+  </div>
+
+  <main id="app-main" class="hidden">
     <div id="home-page">
       <section class="hero-summary" aria-live="polite">
         <span class="hero-label">שווי תיק כולל</span>
