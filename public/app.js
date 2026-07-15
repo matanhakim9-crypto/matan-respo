@@ -214,6 +214,10 @@ function buildHoldingDetail(holding) {
         <span class="purchase-stat-label">${hasMultipleLots ? 'כניסה ראשונה' : 'תאריך קנייה'}</span>
         <span class="purchase-stat-value">${holding.purchase_date ? fmtDate(holding.purchase_date) : '—'}</span>
       </div>
+      <div class="purchase-stat">
+        <span class="purchase-stat-label">תשואת דיב' שנתית</span>
+        <span class="purchase-stat-value">${fmtPct(holding.dividendYieldPct)}</span>
+      </div>
     </div>
   `;
 
