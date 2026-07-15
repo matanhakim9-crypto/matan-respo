@@ -589,9 +589,11 @@ async function getCachedPaymentDates(env: Bindings, symbol: string): Promise<Map
 async function logFmpDebug(env: Bindings, info: Record<string, unknown>): Promise<void> {
   try {
     await env.DB.prepare(
-      `INSERT INTO app_settings (key, value) VALUES ('fmp_debug', ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    ).bind(JSON.stringify({ ...info, at: new Date().toISOString() })).run();
+      `INSERT INTO fmp_debug_log (info, created_at) VALUES (?, ?)`
+    ).bind(JSON.stringify(info), new Date().toISOString()).run();
+    await env.DB.prepare(
+      `DELETE FROM fmp_debug_log WHERE id NOT IN (SELECT id FROM fmp_debug_log ORDER BY id DESC LIMIT 100)`
+    ).run();
   } catch {
     // diagnostics are best-effort only
   }

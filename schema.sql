@@ -64,6 +64,12 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fmp_debug_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  info TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS dividend_pay_date_cache (
   ticker TEXT NOT NULL,
   ex_date TEXT NOT NULL,
