@@ -374,9 +374,125 @@ async function loadReportsStats() {
   }
 }
 
+// ---- Reports page: charts ----
+
+function renderTrendChart() {
+  const svg = document.getElementById('trend-chart-svg');
+  const totalEl = document.getElementById('trend-total');
+  const deltaEl = document.getElementById('trend-delta');
+  const series = (growthData?.monthly ?? []).slice(-12);
+
+  if (series.length === 0) {
+    svg.innerHTML = '';
+    totalEl.textContent = '–';
+    deltaEl.textContent = '';
+    return;
+  }
+
+  const total = series.reduce((sum, r) => sum + r.total, 0);
+  totalEl.textContent = fmtMoneyCompact(total);
+
+  const first = series[0].total;
+  const last = series[series.length - 1].total;
+  deltaEl.className = 'trend-delta';
+  if (first > 0) {
+    const pct = ((last - first) / first) * 100;
+    deltaEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}% לעומת תחילת התקופה`;
+    deltaEl.classList.add(pct >= 0 ? 'positive' : 'negative');
+  } else {
+    deltaEl.textContent = '';
+  }
+
+  // Chronological left-to-right, matching how finance charts read regardless
+  // of page direction (the chart itself has its own `direction: ltr`).
+  const w = 320, h = 150, pad = 8;
+  const max = Math.max(...series.map((r) => r.total), 1);
+  const stepX = series.length > 1 ? (w - pad * 2) / (series.length - 1) : 0;
+  const points = series.map((r, i) => ({
+    x: pad + i * stepX,
+    y: h - pad - (r.total / max) * (h - pad * 2 - 10),
+  }));
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${h} L${points[0].x.toFixed(1)},${h} Z`;
+  const lastPoint = points[points.length - 1];
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="trendAreaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#00d68f" stop-opacity="0.35" />
+        <stop offset="1" stop-color="#00d68f" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+    <line x1="0" y1="${(h * 0.2).toFixed(1)}" x2="${w}" y2="${(h * 0.2).toFixed(1)}" stroke="#232a35" stroke-width="1" />
+    <line x1="0" y1="${(h * 0.5).toFixed(1)}" x2="${w}" y2="${(h * 0.5).toFixed(1)}" stroke="#232a35" stroke-width="1" />
+    <line x1="0" y1="${(h * 0.8).toFixed(1)}" x2="${w}" y2="${(h * 0.8).toFixed(1)}" stroke="#232a35" stroke-width="1" />
+    <path d="${areaPath}" fill="url(#trendAreaGrad)" />
+    <path d="${linePath}" fill="none" stroke="#00d68f" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="#00d68f" stroke="#06070a" stroke-width="2" />
+  `;
+}
+
+function renderMarketDonut() {
+  const svg = document.getElementById('market-donut-svg');
+  const legend = document.getElementById('market-legend');
+  const totalIL = lastStats?.totalIL ?? 0;
+  const totalUS = lastStats?.totalUS ?? 0;
+  const total = totalIL + totalUS;
+
+  if (total <= 0) {
+    svg.innerHTML = '';
+    legend.innerHTML = '<p class="empty">אין עדיין נתונים</p>';
+    return;
+  }
+
+  const r = 50, cx = 65, cy = 65, sw = 16;
+  const circumference = 2 * Math.PI * r;
+  const ilFrac = totalIL / total;
+  const usFrac = totalUS / total;
+  const ilLen = circumference * ilFrac;
+  const usLen = circumference * usFrac;
+
+  svg.innerHTML = `
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#1c222c" stroke-width="${sw}" />
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#00d68f" stroke-width="${sw}"
+      stroke-dasharray="${ilLen.toFixed(2)} ${(circumference - ilLen).toFixed(2)}" stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" />
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#3b82f6" stroke-width="${sw}"
+      stroke-dasharray="${usLen.toFixed(2)} ${(circumference - usLen).toFixed(2)}" stroke-dashoffset="${(-ilLen).toFixed(2)}" stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" />
+    <text x="${cx}" y="${cy - 5}" text-anchor="middle" fill="#f5f6f8" font-size="17" font-weight="700">${fmtMoneyCompact(total)}</text>
+    <text x="${cx}" y="${cy + 13}" text-anchor="middle" fill="#8b93a1" font-size="10">סה"כ</text>
+  `;
+
+  legend.innerHTML = `
+    <div class="legend-row">
+      <span class="legend-left"><span class="legend-dot" style="background:#00d68f"></span>ישראליות</span>
+      <span class="legend-value">${(ilFrac * 100).toFixed(0)}%</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-left"><span class="legend-dot" style="background:#3b82f6"></span>אמריקאיות</span>
+      <span class="legend-value">${(usFrac * 100).toFixed(0)}%</span>
+    </div>
+  `;
+}
+
+function renderCharts() {
+  renderTrendChart();
+  renderMarketDonut();
+}
+
+document.getElementById('charts-toggle-btn').addEventListener('click', () => {
+  const section = document.getElementById('charts-section');
+  const arrow = document.getElementById('charts-toggle-arrow');
+  const isOpen = !section.classList.contains('hidden');
+  section.classList.toggle('hidden', isOpen);
+  arrow.classList.toggle('expanded', !isOpen);
+  if (!isOpen) renderCharts();
+});
+
 async function refreshAll() {
   await Promise.all([loadSummary(), loadDividends(), loadGrowthChart(), loadReportsStats()]);
   renderHoldings(lastHoldings);
+  renderCharts();
 }
 
 // ---- Reports page navigation ----

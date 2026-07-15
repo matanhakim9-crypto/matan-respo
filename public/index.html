@@ -155,6 +155,31 @@
         </div>
       </div>
 
+      <button type="button" id="charts-toggle-btn" class="group-header charts-toggle-btn">
+        <span class="group-title">📈 גרפים וסטטיסטיקה</span>
+        <span class="expand-arrow group-arrow" id="charts-toggle-arrow">›</span>
+      </button>
+      <div id="charts-section" class="charts-section hidden">
+        <section class="panel">
+          <h2>מגמת הכנסה מדיבידנד</h2>
+          <p class="hint">12 החודשים האחרונים</p>
+          <div class="trend-top">
+            <span class="trend-total" id="trend-total">–</span>
+            <span class="trend-delta" id="trend-delta"></span>
+          </div>
+          <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 150" preserveAspectRatio="none"></svg>
+        </section>
+
+        <section class="panel">
+          <h2>התפלגות לפי שוק</h2>
+          <p class="hint">מאז הכניסה לכל המניות</p>
+          <div class="donut-wrap">
+            <svg id="market-donut-svg" width="130" height="130" viewBox="0 0 130 130"></svg>
+            <div class="donut-legend" id="market-legend"></div>
+          </div>
+        </section>
+      </div>
+
       <section class="panel">
         <h2>לפי מניה</h2>
         <p class="hint">סה"כ דיבידנד שהתקבל מכל מניה, מהגבוה לנמוך. לחיצה על מניה מציגה את היסטוריית התשלומים שלה.</p>
