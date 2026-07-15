@@ -711,17 +711,24 @@ async function cachePaymentDates(env: Bindings, symbol: string, map: Map<string,
   }
 }
 
-// Tries FMP first (works for the symbols its free tier covers), falls back
-// to Alpha Vantage for symbols FMP won't serve, and falls back to whatever
-// was previously cached in D1 if both live calls come up empty — so a
-// provider hiccup never regresses an already-known payment date back to the
-// ex-date.
-async function fetchPaymentDatesForTicker(env: Bindings, symbol: string): Promise<Map<string, string>> {
+// A payment date, once resolved for a given (ticker, ex-date), is a
+// historical fact that never changes — so the cache is checked first and
+// live providers are only called for ex-dates it doesn't have yet (a new
+// dividend that was just declared, or a ticker never synced before). This
+// keeps every known-good date "permanent" automatically, and spends the
+// providers' tight free-tier quotas only on genuinely new data instead of
+// re-fetching the same answer on every sync.
+async function fetchPaymentDatesForTicker(env: Bindings, symbol: string, exDates: string[]): Promise<Map<string, string>> {
+  const known = await getCachedPaymentDates(env, symbol);
+  if (exDates.every((d) => known.has(d))) return known;
+
   const fmpMap = await fetchFmpPaymentDates(env, symbol);
-  if (fmpMap.size > 0) return fmpMap;
+  for (const [exDate, payDate] of fmpMap) known.set(exDate, payDate);
+  if (exDates.every((d) => known.has(d))) return known;
+
   const avMap = await fetchAlphaVantagePaymentDates(env, symbol);
-  if (avMap.size > 0) return avMap;
-  return getCachedPaymentDates(env, symbol);
+  for (const [exDate, payDate] of avMap) known.set(exDate, payDate);
+  return known;
 }
 
 async function fetchDividendHistory(env: Bindings, ticker: string): Promise<EnrichedDivPoint[]> {
@@ -732,7 +739,9 @@ async function fetchDividendHistory(env: Bindings, ticker: string): Promise<Enri
     .map((p) => ({ exDate: new Date(p.date * 1000).toISOString().slice(0, 10), amount: p.amount }))
     .sort((a, b) => a.exDate.localeCompare(b.exDate));
 
-  const payDates = ticker.endsWith('.TA') ? new Map<string, string>() : await fetchPaymentDatesForTicker(env, ticker);
+  const payDates = ticker.endsWith('.TA')
+    ? new Map<string, string>()
+    : await fetchPaymentDatesForTicker(env, ticker, points.map((p) => p.exDate));
 
   return points.map((p) => ({ exDate: p.exDate, payDate: payDates.get(p.exDate) ?? p.exDate, amount: p.amount }));
 }
