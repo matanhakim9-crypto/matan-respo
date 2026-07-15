@@ -586,19 +586,40 @@ async function getCachedPaymentDates(env: Bindings, symbol: string): Promise<Map
   return map;
 }
 
+async function logFmpDebug(env: Bindings, info: Record<string, unknown>): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO app_settings (key, value) VALUES ('fmp_debug', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+    ).bind(JSON.stringify({ ...info, at: new Date().toISOString() })).run();
+  } catch {
+    // diagnostics are best-effort only
+  }
+}
+
 // FMP's free tier has a daily request quota; a transient failure (rate
 // limit, network blip) must never regress already-known payment dates back
 // to the ex-date, so successful lookups are cached in D1 and reused as a
 // fallback whenever the live call doesn't succeed.
 async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
   const apiKey = await getFmpApiKey(env);
-  if (!apiKey) return getCachedPaymentDates(env, symbol);
+  if (!apiKey) {
+    await logFmpDebug(env, { symbol, error: 'no_api_key' });
+    return getCachedPaymentDates(env, symbol);
+  }
   try {
     const url = `https://financialmodelingprep.com/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
     const res = await fetch(url);
-    if (!res.ok) return getCachedPaymentDates(env, symbol);
+    if (!res.ok) {
+      const bodySnippet = await res.text().then((t) => t.slice(0, 300)).catch(() => '');
+      await logFmpDebug(env, { symbol, error: 'http_status', status: res.status, bodySnippet });
+      return getCachedPaymentDates(env, symbol);
+    }
     const data = await res.json<any>();
-    if (!Array.isArray(data)) return getCachedPaymentDates(env, symbol);
+    if (!Array.isArray(data)) {
+      await logFmpDebug(env, { symbol, error: 'not_array', bodySnippet: JSON.stringify(data).slice(0, 300) });
+      return getCachedPaymentDates(env, symbol);
+    }
 
     const map = new Map<string, string>();
     for (const row of data) {
@@ -606,7 +627,11 @@ async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<
       const payDate = typeof row?.paymentDate === 'string' && row.paymentDate ? row.paymentDate.slice(0, 10) : null;
       if (exDate && payDate) map.set(exDate, payDate);
     }
-    if (map.size === 0) return getCachedPaymentDates(env, symbol);
+    if (map.size === 0) {
+      await logFmpDebug(env, { symbol, error: 'empty_map', rowCount: data.length, sampleRow: data[0] ?? null });
+      return getCachedPaymentDates(env, symbol);
+    }
+    await logFmpDebug(env, { symbol, ok: true, count: map.size });
 
     try {
       const statements = [...map.entries()].map(([exDate, payDate]) =>
@@ -620,7 +645,8 @@ async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<
       // caching is best-effort; the freshly fetched map is still returned below
     }
     return map;
-  } catch {
+  } catch (err) {
+    await logFmpDebug(env, { symbol, error: 'exception', message: err instanceof Error ? err.message : String(err) });
     return getCachedPaymentDates(env, symbol);
   }
 }
