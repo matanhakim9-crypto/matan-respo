@@ -413,8 +413,11 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
   const history = await fetchDividendHistory(ticker);
   if (history.length === 0) return;
 
+  // Real dividend eligibility requires owning the stock BEFORE the ex-dividend
+  // date (`date` here) — buying on the ex-date itself is already too late, the
+  // seller keeps that payment. Hence strictly-less-than, not <=.
   const sharesHeldOn = (date: string) =>
-    lots.reduce((sum, lot) => sum + (!lot.purchase_date || lot.purchase_date <= date ? lot.shares : 0), 0);
+    lots.reduce((sum, lot) => sum + (!lot.purchase_date || lot.purchase_date < date ? lot.shares : 0), 0);
 
   // Full replace (not an incremental upsert) so lots added/edited/removed
   // since the last sync are always reflected correctly.
