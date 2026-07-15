@@ -366,6 +366,50 @@ async function findHistoricalDates(ticker: string, targetPrice: number, year?: n
   return [];
 }
 
+// Closest trading-day close to a given date, used to sanity-check a
+// user-entered purchase price (weekends/holidays fall back to the nearest
+// trading day within the window instead of finding nothing).
+async function getHistoricalPriceNear(ticker: string, dateStr: string): Promise<number | null> {
+  const targetMs = new Date(`${dateStr}T00:00:00Z`).getTime();
+  if (Number.isNaN(targetMs)) return null;
+  const period1 = Math.floor(targetMs / 1000) - 10 * 24 * 3600;
+  const period2 = Math.floor(targetMs / 1000) + 5 * 24 * 3600;
+  const result = await fetchYahooChart(ticker, { period1, period2 });
+  if (!result) return null;
+
+  const timestamps: number[] = result.timestamp ?? [];
+  const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+  const points = timestamps
+    .map((ts, i) => (closes[i] == null ? null : { ms: ts * 1000, price: closes[i]! }))
+    .filter((p): p is { ms: number; price: number } => p !== null);
+  if (points.length === 0) return null;
+
+  points.sort((a, b) => Math.abs(a.ms - targetMs) - Math.abs(b.ms - targetMs));
+  return points[0].price;
+}
+
+// Rejects purchases with a price wildly inconsistent with where the stock
+// actually traded on that date (e.g. entering today's price for a purchase
+// a year ago) — a loose enough tolerance to still allow normal
+// day-to-day/intraday variation and imprecise memory.
+const PURCHASE_PRICE_SANITY_TOLERANCE = 0.3;
+
+async function validatePurchasePrice(ticker: string, purchaseDate: string | null, purchasePrice: number): Promise<string | null> {
+  if (!purchaseDate) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (purchaseDate > today) return 'תאריך הקנייה לא יכול להיות בעתיד';
+
+  const historicalPrice = await getHistoricalPriceNear(ticker, purchaseDate);
+  if (historicalPrice == null || historicalPrice <= 0) return null; // can't verify — don't block
+
+  const diff = Math.abs(purchasePrice - historicalPrice) / historicalPrice;
+  if (diff <= PURCHASE_PRICE_SANITY_TOLERANCE) return null;
+
+  const isIL = ticker.endsWith('.TA');
+  const priceLabel = isIL ? `כ-${historicalPrice.toFixed(2)} אג'` : `כ-$${historicalPrice.toFixed(2)}`;
+  return `המחיר שהזנת רחוק מדי מהמחיר האמיתי של המניה בתאריך הזה (מחיר בפועל היה ${priceLabel}). בדוק את המחיר או התאריך.`;
+}
+
 // ---------- Dividend auto-discovery ----------
 
 type DivPoint = { date: string; amount: number };
@@ -463,6 +507,10 @@ app.post('/api/holdings', async (c) => {
     return c.json({ error: 'ticker, shares and purchase_price are required' }, 400);
   }
   const normalizedTicker = normalizeTicker(ticker, market);
+
+  const priceError = await validatePurchasePrice(normalizedTicker, purchase_date ?? null, purchase_price);
+  if (priceError) return c.json({ error: priceError }, 400);
+
   const amount_invested = shares * purchase_price;
   const result = await c.env.DB.prepare(
     `INSERT INTO holdings (ticker, market, company_name, shares, purchase_price, amount_invested, purchase_date, notes)
@@ -493,6 +541,10 @@ app.patch('/api/holdings/:id', async (c) => {
   if (!ticker || !shares || !purchase_price) {
     return c.json({ error: 'ticker, shares and purchase_price are required' }, 400);
   }
+
+  const priceError = await validatePurchasePrice(ticker, purchase_date ?? null, purchase_price);
+  if (priceError) return c.json({ error: priceError }, 400);
+
   const amount_invested = shares * purchase_price;
 
   await c.env.DB.prepare(
