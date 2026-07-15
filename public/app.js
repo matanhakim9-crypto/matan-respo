@@ -193,9 +193,6 @@ function buildHoldingDetail(holding) {
   const isIL = currency === 'ILA';
   const displayCurrency = isIL ? 'ILS' : currency;
   const toDisplay = (n) => (isIL ? n / 100 : n);
-  const payments = lastDividends
-    .filter((p) => p.ticker === holding.ticker && (!holding.purchase_date || p.payment_date >= holding.purchase_date))
-    .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
 
   const wrap = document.createElement('div');
   wrap.className = 'holding-detail';
@@ -246,54 +243,71 @@ function buildHoldingDetail(holding) {
     </div>
   `;
 
-  let dividendSection;
+  wrap.innerHTML = purchaseInfo + lotsSection;
+  return wrap;
+}
+
+// Per-stock dividend payment history — shown in the reports page (per
+// ticker), not on the main holdings screen.
+function buildDividendHistorySection(ticker) {
+  const currency = currencyForTicker(ticker);
+  const isIL = currency === 'ILA';
+  const displayCurrency = isIL ? 'ILS' : currency;
+  const toDisplay = (n) => (isIL ? n / 100 : n);
+  const payments = lastDividends
+    .filter((p) => p.ticker === ticker)
+    .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'holding-detail';
+
   if (payments.length === 0) {
-    dividendSection = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו מאז שנכנסת אליה</p>';
-  } else {
-    const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? holding.shares);
-    const grossTotal = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
-    const netTotal = grossTotal * (1 - DIVIDEND_TAX_RATE);
-    dividendSection = `
-      <div class="stock-dividend-summary">
-        <div>סה"כ ברוטו מאז הכניסה: <strong>${fmtMoney(toDisplay(grossTotal), displayCurrency)}</strong></div>
-        <div>נטו משוער אחרי מס (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%): <strong class="net-highlight">${fmtMoney(toDisplay(netTotal), displayCurrency)}</strong></div>
-      </div>
-      <div class="dividend-card-list">
-        ${payments.map((p) => {
-          const gross = totalFor(p);
-          const tax = gross * DIVIDEND_TAX_RATE;
-          const net = gross - tax;
-          return `
-          <div class="dividend-card ${p.status === 'expected' ? 'is-expected' : ''}">
-            <div class="dividend-card-head">
-              <span class="dividend-card-date">${fmtDate(p.payment_date)}</span>
-              <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
-            </div>
-            <div class="dividend-card-row">
-              <span>ברוטו</span>
-              <span>${fmtMoney(toDisplay(gross), displayCurrency)}</span>
-            </div>
-            <div class="dividend-card-row dividend-tax-row">
-              <span>מס (משוער ${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%)</span>
-              <span>−${fmtMoney(toDisplay(tax), displayCurrency)}</span>
-            </div>
-            <div class="dividend-card-row dividend-net-row">
-              <span>נטו</span>
-              <strong>${fmtMoney(toDisplay(net), displayCurrency)}</strong>
-            </div>
-            <div class="dividend-card-row">
-              <span>לפי מניה</span>
-              <span>${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</span>
-            </div>
-          </div>
-        `;
-        }).join('')}
-      </div>
-      <p class="hint dividend-tax-disclaimer">* המס הוא הערכה בלבד (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}% אחיד), לא נתון אמיתי מהברוקר — שיעור המס בפועל תלוי בסוג המניה, אמנת מס והמעמד האישי שלך.</p>
-    `;
+    wrap.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד למניה הזו</p>';
+    return wrap;
   }
 
-  wrap.innerHTML = purchaseInfo + lotsSection + dividendSection;
+  const totalFor = (p) => p.amount_per_share * (p.shares_at_payment ?? 0);
+  const grossTotal = payments.filter((p) => p.status === 'paid').reduce((sum, p) => sum + totalFor(p), 0);
+  const netTotal = grossTotal * (1 - DIVIDEND_TAX_RATE);
+
+  wrap.innerHTML = `
+    <div class="stock-dividend-summary">
+      <div>סה"כ ברוטו מאז הכניסה: <strong>${fmtMoney(toDisplay(grossTotal), displayCurrency)}</strong></div>
+      <div>נטו משוער אחרי מס (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%): <strong class="net-highlight">${fmtMoney(toDisplay(netTotal), displayCurrency)}</strong></div>
+    </div>
+    <div class="dividend-card-list">
+      ${payments.map((p) => {
+        const gross = totalFor(p);
+        const tax = gross * DIVIDEND_TAX_RATE;
+        const net = gross - tax;
+        return `
+        <div class="dividend-card ${p.status === 'expected' ? 'is-expected' : ''}">
+          <div class="dividend-card-head">
+            <span class="dividend-card-date">${fmtDate(p.payment_date)}</span>
+            <span class="status-badge status-${p.status}">${p.status === 'paid' ? 'שולם' : 'צפוי'}</span>
+          </div>
+          <div class="dividend-card-row">
+            <span>ברוטו</span>
+            <span>${fmtMoney(toDisplay(gross), displayCurrency)}</span>
+          </div>
+          <div class="dividend-card-row dividend-tax-row">
+            <span>מס (משוער ${(DIVIDEND_TAX_RATE * 100).toFixed(0)}%)</span>
+            <span>−${fmtMoney(toDisplay(tax), displayCurrency)}</span>
+          </div>
+          <div class="dividend-card-row dividend-net-row">
+            <span>נטו</span>
+            <strong>${fmtMoney(toDisplay(net), displayCurrency)}</strong>
+          </div>
+          <div class="dividend-card-row">
+            <span>לפי מניה</span>
+            <span>${fmtMoney(toDisplay(p.amount_per_share), displayCurrency)}</span>
+          </div>
+        </div>
+      `;
+      }).join('')}
+    </div>
+    <p class="hint dividend-tax-disclaimer">* המס הוא הערכה בלבד (${(DIVIDEND_TAX_RATE * 100).toFixed(0)}% אחיד), לא נתון אמיתי מהברוקר — שיעור המס בפועל תלוי בסוג המניה, אמנת מס והמעמד האישי שלך.</p>
+  `;
   return wrap;
 }
 
@@ -301,24 +315,45 @@ async function loadDividends() {
   lastDividends = await api('/api/dividends');
 }
 
+let expandedReportTicker = null;
+
 function renderTopPayers(topPayers) {
   const el = document.getElementById('reports-top-payers');
+  el.innerHTML = '';
   if (!topPayers || topPayers.length === 0) {
     el.innerHTML = '<p class="empty">אין עדיין נתוני דיבידנד ששולמו</p>';
     return;
   }
-  el.innerHTML = topPayers.map((p) => {
+  for (const p of topPayers) {
     const bareTicker = p.ticker.replace('.TA', '');
     const label = p.market === 'IL' && p.company_name ? p.company_name : bareTicker;
     const flag = p.market === 'IL' ? '🇮🇱' : '🇺🇸';
-    return `
-      <div class="growth-list-row">
-        <span class="growth-list-period">${label} ${flag}</span>
+    const isExpanded = p.ticker === expandedReportTicker;
+
+    const row = document.createElement('div');
+    row.className = 'growth-list-row top-payer-row' + (isExpanded ? ' expanded' : '');
+    row.dataset.ticker = p.ticker;
+    row.innerHTML = `
+      <span class="growth-list-period">${label} ${flag}</span>
+      <span class="top-payer-value-block">
         <span class="growth-list-value">${fmtMoneyCompact(p.total)}</span>
-      </div>
+        <span class="expand-arrow">›</span>
+      </span>
     `;
-  }).join('');
+    el.appendChild(row);
+    if (isExpanded) {
+      el.appendChild(buildDividendHistorySection(p.ticker));
+    }
+  }
 }
+
+document.addEventListener('click', (e) => {
+  const row = e.target.closest('.top-payer-row');
+  if (!row) return;
+  const ticker = row.dataset.ticker;
+  expandedReportTicker = expandedReportTicker === ticker ? null : ticker;
+  renderTopPayers(lastStats?.topPayers ?? []);
+});
 
 async function loadReportsStats() {
   try {

@@ -728,6 +728,21 @@ main {
   font-variant-numeric: tabular-nums;
 }
 
+.top-payer-row {
+  cursor: pointer;
+}
+
+.top-payer-value-block {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.top-payer-row.expanded .expand-arrow {
+  transform: rotate(90deg);
+  color: var(--green);
+}
+
 .status-badge {
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
