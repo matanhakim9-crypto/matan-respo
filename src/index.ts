@@ -518,14 +518,22 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
   // since the last sync are always reflected correctly.
   const statements = [env.DB.prepare('DELETE FROM dividend_payments WHERE ticker = ?').bind(ticker)];
 
+  // Yahoo's events.dividends only lists dividends whose ex-date has already
+  // passed, so it always looked "paid" — but once the real payment date is
+  // enriched in, that date can still be in the future (ex-date already
+  // passed, cash hasn't landed yet), so status has to be based on the
+  // payment date actually having arrived, not just on Yahoo having a record.
+  const today = new Date().toISOString().slice(0, 10);
+
   for (const point of history) {
     const shares = sharesHeldOn(point.exDate);
     if (shares <= 0) continue; // not owned yet as of this payment
+    const status = point.payDate > today ? 'expected' : 'paid';
     statements.push(
       env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
-         VALUES (?, ?, ?, 'paid', ?)`
-      ).bind(ticker, point.amount, point.payDate, shares)
+         VALUES (?, ?, ?, ?, ?)`
+      ).bind(ticker, point.amount, point.payDate, status, shares)
     );
   }
 
