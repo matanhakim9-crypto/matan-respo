@@ -63,3 +63,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dividend_pay_date_cache (
+  ticker TEXT NOT NULL,
+  ex_date TEXT NOT NULL,
+  pay_date TEXT NOT NULL,
+  PRIMARY KEY (ticker, ex_date)
+);

@@ -573,25 +573,56 @@ async function getFmpApiKey(env: Bindings): Promise<string | null> {
 // endpoint carries both, so US tickers are enriched with it on a
 // best-effort basis; any failure (missing key, blocked request, unexpected
 // shape, no match) silently falls back to the ex-dividend date.
-async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
+async function getCachedPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
+  try {
+    const rows = await env.DB.prepare(
+      'SELECT ex_date, pay_date FROM dividend_pay_date_cache WHERE ticker = ?'
+    ).bind(symbol).all<{ ex_date: string; pay_date: string }>();
+    for (const row of rows.results ?? []) map.set(row.ex_date, row.pay_date);
+  } catch {
+    // best-effort only
+  }
+  return map;
+}
+
+// FMP's free tier has a daily request quota; a transient failure (rate
+// limit, network blip) must never regress already-known payment dates back
+// to the ex-date, so successful lookups are cached in D1 and reused as a
+// fallback whenever the live call doesn't succeed.
+async function fetchFmpPaymentDates(env: Bindings, symbol: string): Promise<Map<string, string>> {
   const apiKey = await getFmpApiKey(env);
-  if (!apiKey) return map;
+  if (!apiKey) return getCachedPaymentDates(env, symbol);
   try {
     const url = `https://financialmodelingprep.com/stable/dividends?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
     const res = await fetch(url);
-    if (!res.ok) return map;
+    if (!res.ok) return getCachedPaymentDates(env, symbol);
     const data = await res.json<any>();
-    if (!Array.isArray(data)) return map;
+    if (!Array.isArray(data)) return getCachedPaymentDates(env, symbol);
+
+    const map = new Map<string, string>();
     for (const row of data) {
       const exDate = typeof row?.date === 'string' ? row.date.slice(0, 10) : null;
       const payDate = typeof row?.paymentDate === 'string' && row.paymentDate ? row.paymentDate.slice(0, 10) : null;
       if (exDate && payDate) map.set(exDate, payDate);
     }
+    if (map.size === 0) return getCachedPaymentDates(env, symbol);
+
+    try {
+      const statements = [...map.entries()].map(([exDate, payDate]) =>
+        env.DB.prepare(
+          `INSERT INTO dividend_pay_date_cache (ticker, ex_date, pay_date) VALUES (?, ?, ?)
+           ON CONFLICT(ticker, ex_date) DO UPDATE SET pay_date = excluded.pay_date`
+        ).bind(symbol, exDate, payDate)
+      );
+      await env.DB.batch(statements);
+    } catch {
+      // caching is best-effort; the freshly fetched map is still returned below
+    }
+    return map;
   } catch {
-    // best-effort only
+    return getCachedPaymentDates(env, symbol);
   }
-  return map;
 }
 
 async function fetchDividendHistory(env: Bindings, ticker: string): Promise<EnrichedDivPoint[]> {
