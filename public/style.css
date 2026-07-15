@@ -549,8 +549,8 @@ main {
 
 .lot-row-actions .edit-btn,
 .lot-row-actions .delete-btn {
-  padding: 0.3rem 0.55rem;
-  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.74rem;
   line-height: 1;
 }
 

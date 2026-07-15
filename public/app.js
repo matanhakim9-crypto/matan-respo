@@ -238,8 +238,8 @@ function buildHoldingDetail(holding) {
               <span class="lot-row-date">${lot.purchase_date ? fmtDate(lot.purchase_date) : 'ללא תאריך'}</span>
             </div>
             <div class="lot-row-actions">
-              <button class="edit-btn" data-id="${lot.id}" aria-label="ערוך רכישה">✎</button>
-              <button class="delete-btn" data-id="${lot.id}" aria-label="מחק רכישה">🗑</button>
+              <button class="edit-btn" data-id="${lot.id}">ערוך</button>
+              <button class="delete-btn" data-id="${lot.id}">מחק</button>
             </div>
           </div>
         `).join('')}
