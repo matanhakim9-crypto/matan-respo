@@ -162,12 +162,18 @@
       <div id="charts-section" class="charts-section hidden">
         <section class="panel">
           <h2>מגמת הכנסה מדיבידנד</h2>
-          <p class="hint">12 החודשים האחרונים</p>
+          <div class="trend-range-tabs" id="trend-range-tabs">
+            <button type="button" class="growth-tab" data-range="3">3 חודשים</button>
+            <button type="button" class="growth-tab" data-range="6">חצי שנה</button>
+            <button type="button" class="growth-tab active" data-range="12">שנה</button>
+            <button type="button" class="growth-tab" data-range="24">שנתיים</button>
+            <button type="button" class="growth-tab" data-range="all">הכל</button>
+          </div>
           <div class="trend-top">
             <span class="trend-total" id="trend-total">–</span>
             <span class="trend-delta" id="trend-delta"></span>
           </div>
-          <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 150" preserveAspectRatio="none"></svg>
+          <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
         </section>
 
         <section class="panel">

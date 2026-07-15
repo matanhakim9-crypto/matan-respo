@@ -376,11 +376,33 @@ async function loadReportsStats() {
 
 // ---- Reports page: charts ----
 
+const TREND_RANGE_MONTHS = { '3': 3, '6': 6, '12': 12, '24': 24, all: null };
+const MONTH_SHORT = ['ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יונ', 'יול', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
+const shortMonthLabel = (period) => {
+  const [y, m] = period.split('-');
+  return `${MONTH_SHORT[parseInt(m, 10) - 1]}׳${y.slice(2)}`;
+};
+let trendRangeKey = '12';
+
+// Evenly-spaced label indices (always including the first and last point)
+// so the x-axis stays readable instead of overlapping when there are many
+// points.
+function pickLabelIndices(n, maxLabels) {
+  if (n <= maxLabels) return Array.from({ length: n }, (_, i) => i);
+  const idx = [];
+  for (let i = 0; i < maxLabels; i++) {
+    idx.push(Math.round((i * (n - 1)) / (maxLabels - 1)));
+  }
+  return [...new Set(idx)];
+}
+
 function renderTrendChart() {
   const svg = document.getElementById('trend-chart-svg');
   const totalEl = document.getElementById('trend-total');
   const deltaEl = document.getElementById('trend-delta');
-  const series = (growthData?.monthly ?? []).slice(-12);
+  const all = growthData?.monthly ?? [];
+  const months = TREND_RANGE_MONTHS[trendRangeKey];
+  const series = months ? all.slice(-months) : all;
 
   if (series.length === 0) {
     svg.innerHTML = '';
@@ -405,17 +427,37 @@ function renderTrendChart() {
 
   // Chronological left-to-right, matching how finance charts read regardless
   // of page direction (the chart itself has its own `direction: ltr`).
-  const w = 320, h = 150, pad = 8;
+  // Left margin reserved for y-axis value labels, bottom margin for x-axis
+  // month labels — a bare line with no scale/labels doesn't say much on its
+  // own.
+  const plotLeft = 34, plotRight = 312, plotTop = 12, plotBottom = 122;
   const max = Math.max(...series.map((r) => r.total), 1);
-  const stepX = series.length > 1 ? (w - pad * 2) / (series.length - 1) : 0;
+  const stepX = series.length > 1 ? (plotRight - plotLeft) / (series.length - 1) : 0;
   const points = series.map((r, i) => ({
-    x: pad + i * stepX,
-    y: h - pad - (r.total / max) * (h - pad * 2 - 10),
+    x: plotLeft + i * stepX,
+    y: plotBottom - (r.total / max) * (plotBottom - plotTop),
   }));
 
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${h} L${points[0].x.toFixed(1)},${h} Z`;
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${plotBottom} L${points[0].x.toFixed(1)},${plotBottom} Z`;
   const lastPoint = points[points.length - 1];
+
+  const yLevels = [
+    { frac: 1, value: max },
+    { frac: 0.5, value: max / 2 },
+    { frac: 0, value: 0 },
+  ];
+  const yAxis = yLevels.map(({ frac, value }) => {
+    const y = plotBottom - frac * (plotBottom - plotTop);
+    return `
+      <line x1="${plotLeft}" y1="${y.toFixed(1)}" x2="${plotRight}" y2="${y.toFixed(1)}" stroke="#232a35" stroke-width="1" />
+      <text x="${(plotLeft - 6).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="#8b93a1" font-size="8.5">${fmtMoneyCompact(value)}</text>
+    `;
+  }).join('');
+
+  const xAxis = pickLabelIndices(series.length, 4)
+    .map((i) => `<text x="${points[i].x.toFixed(1)}" y="${plotBottom + 16}" text-anchor="middle" fill="#8b93a1" font-size="8.5">${shortMonthLabel(series[i].period)}</text>`)
+    .join('');
 
   svg.innerHTML = `
     <defs>
@@ -424,14 +466,22 @@ function renderTrendChart() {
         <stop offset="1" stop-color="#00d68f" stop-opacity="0" />
       </linearGradient>
     </defs>
-    <line x1="0" y1="${(h * 0.2).toFixed(1)}" x2="${w}" y2="${(h * 0.2).toFixed(1)}" stroke="#232a35" stroke-width="1" />
-    <line x1="0" y1="${(h * 0.5).toFixed(1)}" x2="${w}" y2="${(h * 0.5).toFixed(1)}" stroke="#232a35" stroke-width="1" />
-    <line x1="0" y1="${(h * 0.8).toFixed(1)}" x2="${w}" y2="${(h * 0.8).toFixed(1)}" stroke="#232a35" stroke-width="1" />
+    ${yAxis}
     <path d="${areaPath}" fill="url(#trendAreaGrad)" />
     <path d="${linePath}" fill="none" stroke="#00d68f" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
     <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="#00d68f" stroke="#06070a" stroke-width="2" />
+    ${xAxis}
   `;
 }
+
+document.getElementById('trend-range-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.growth-tab');
+  if (!btn) return;
+  trendRangeKey = btn.dataset.range;
+  document.querySelectorAll('#trend-range-tabs .growth-tab').forEach((t) => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderTrendChart();
+});
 
 function renderMarketDonut() {
   const svg = document.getElementById('market-donut-svg');
