@@ -525,10 +525,12 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
   // payment date actually having arrived, not just on Yahoo having a record.
   const today = new Date().toISOString().slice(0, 10);
 
+  let hasUpcomingFromHistory = false;
   for (const point of history) {
     const shares = sharesHeldOn(point.exDate);
     if (shares <= 0) continue; // not owned yet as of this payment
     const status = point.payDate > today ? 'expected' : 'paid';
+    if (status === 'expected') hasUpcomingFromHistory = true;
     statements.push(
       env.DB.prepare(
         `INSERT INTO dividend_payments (ticker, amount_per_share, payment_date, status, shares_at_payment)
@@ -537,7 +539,12 @@ async function syncDividendsForTicker(env: Bindings, ticker: string): Promise<vo
     );
   }
 
-  const next = projectNextDividend(history.map((p) => ({ date: p.payDate, amount: p.amount })));
+  // Only synthesize a projected next dividend when Yahoo/FMP haven't already
+  // told us about a real upcoming one — otherwise a ticker ends up showing
+  // two "expected" rows (the real one plus a guessed one further out).
+  const next = hasUpcomingFromHistory
+    ? null
+    : projectNextDividend(history.map((p) => ({ date: p.payDate, amount: p.amount })));
   if (next) {
     const totalShares = lots.reduce((sum, lot) => sum + lot.shares, 0);
     statements.push(
