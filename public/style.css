@@ -801,11 +801,6 @@ main {
   touch-action: none;
 }
 
-.chart-hint {
-  margin-top: 0.6rem;
-  margin-bottom: 0;
-}
-
 .chart-wrap {
   position: relative;
 }
