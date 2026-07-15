@@ -799,10 +799,11 @@ function renderBarChart(series, labelFn, groupByYear) {
   }
   const totalSum = series.reduce((sum, r) => sum + r.total, 0);
   const avg = totalSum / series.length;
+  const avgLabel = groupByYear ? 'ממוצע לחודש' : 'ממוצע לשנה';
 
   summary.innerHTML = `
     <div class="growth-stat">
-      <span class="growth-stat-label">ממוצע לתקופה</span>
+      <span class="growth-stat-label">${avgLabel}</span>
       <span class="growth-stat-value">${fmtMoneyCompact(avg)}</span>
     </div>
     <div class="growth-stat">
