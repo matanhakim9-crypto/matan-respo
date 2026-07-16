@@ -841,6 +841,17 @@ main {
   cursor: pointer;
 }
 
+.top-payer-label-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.top-payer-avg {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 .top-payer-value-block {
   display: flex;
   align-items: center;

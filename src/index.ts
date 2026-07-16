@@ -1130,12 +1130,16 @@ app.get('/api/dividends/stats', async (c) => {
   const fxRate = await getUsdIlsRate(c.env);
 
   const { results: tickerInfoRows } = await c.env.DB.prepare(
-    'SELECT ticker, market, company_name FROM holdings WHERE user_id = ?'
-  ).bind(userId).all<{ ticker: string; market: Market; company_name: string | null }>();
+    'SELECT ticker, market, company_name, purchase_date FROM holdings WHERE user_id = ?'
+  ).bind(userId).all<{ ticker: string; market: Market; company_name: string | null; purchase_date: string | null }>();
   const tickerInfo = new Map<string, { market: Market; company_name: string | null }>();
+  const firstPurchaseDate = new Map<string, string>();
   for (const row of tickerInfoRows) {
     if (!tickerInfo.has(row.ticker) || row.company_name) {
       tickerInfo.set(row.ticker, { market: row.market, company_name: row.company_name });
+    }
+    if (row.purchase_date && (!firstPurchaseDate.has(row.ticker) || row.purchase_date < firstPurchaseDate.get(row.ticker)!)) {
+      firstPurchaseDate.set(row.ticker, row.purchase_date);
     }
   }
 
@@ -1147,7 +1151,7 @@ app.get('/api/dividends/stats', async (c) => {
   let totalUS = 0;
   let totalThisYear = 0;
   let totalLastYear = 0;
-  const byTicker = new Map<string, { ticker: string; market: Market; company_name: string | null; total: number }>();
+  const byTicker = new Map<string, { ticker: string; market: Market; company_name: string | null; total: number; earliestPaymentDate: string }>();
 
   for (const p of paid) {
     const info = tickerInfo.get(p.ticker);
@@ -1164,11 +1168,24 @@ app.get('/api/dividends/stats', async (c) => {
     if (year === lastYear) totalLastYear += amountILS;
 
     const existing = byTicker.get(p.ticker);
-    if (existing) existing.total += amountILS;
-    else byTicker.set(p.ticker, { ticker: p.ticker, market, company_name: info?.company_name ?? null, total: amountILS });
+    if (existing) {
+      existing.total += amountILS;
+      if (p.payment_date < existing.earliestPaymentDate) existing.earliestPaymentDate = p.payment_date;
+    } else {
+      byTicker.set(p.ticker, { ticker: p.ticker, market, company_name: info?.company_name ?? null, total: amountILS, earliestPaymentDate: p.payment_date });
+    }
   }
 
-  const topPayers = [...byTicker.values()].sort((a, b) => b.total - a.total);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const MIN_YEARS_SPAN = 30 / 365.25; // avoid absurd extrapolation from a single recent payment
+  const topPayers = [...byTicker.values()]
+    .map((t) => {
+      const startDate = firstPurchaseDate.get(t.ticker) ?? t.earliestPaymentDate;
+      const daysHeld = (Date.parse(todayStr) - Date.parse(startDate)) / 86400000;
+      const yearsHeld = Math.max(daysHeld / 365.25, MIN_YEARS_SPAN);
+      return { ticker: t.ticker, market: t.market, company_name: t.company_name, total: t.total, avgPerYear: t.total / yearsHeld };
+    })
+    .sort((a, b) => b.total - a.total);
 
   return c.json({ totalAllTime, totalIL, totalUS, totalThisYear, totalLastYear, topPayers });
 });

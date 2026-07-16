@@ -428,7 +428,10 @@ function renderTopPayers(topPayers) {
     row.className = 'growth-list-row top-payer-row' + (isExpanded ? ' expanded' : '');
     row.dataset.ticker = p.ticker;
     row.innerHTML = `
-      <span class="growth-list-period">${label} ${flag}</span>
+      <span class="top-payer-label-block">
+        <span class="growth-list-period">${label} ${flag}</span>
+        <span class="top-payer-avg">${fmtMoneyCompact(p.avgPerYear)} בממוצע לשנה</span>
+      </span>
       <span class="top-payer-value-block">
         <span class="growth-list-value">${fmtMoneyCompact(p.total)}</span>
         <span class="expand-arrow">›</span>
