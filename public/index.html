@@ -105,57 +105,73 @@
         <p class="hint">לחיצה על מניה מציגה את פרטי הרכישות שלה. דיבידנדים נשלפים אוטומטית בכל הוספה/עדכון, ואפשר לראות את היסטוריית התשלומים בדוח הכנסות הדיבידנד.</p>
         <p id="sync-status" class="hint"></p>
 
+        <button type="button" id="open-add-holding-btn" class="reports-entry-card">
+          <span class="reports-entry-icon">➕</span>
+          <span class="reports-entry-text">
+            <span class="reports-entry-title">הוספת מניה</span>
+            <span class="reports-entry-sub">הזנת רכישה חדשה לתיק</span>
+          </span>
+          <span class="expand-arrow">›</span>
+        </button>
+
         <div class="holdings-search">
           <input type="text" id="holdings-search-input" placeholder="חיפוש מניה לפי שם או טיקר…" autocomplete="off" />
         </div>
 
         <div class="holdings-list" id="holdings-body"></div>
-
-        <form id="holding-form" class="stock-form">
-          <input type="hidden" name="id" id="holding-edit-id" />
-          <input type="hidden" name="market" id="holding-market-input" value="US" />
-          <input type="hidden" name="company_name" id="holding-company-name-input" value="" />
-
-          <div class="field ticker-search-wrap">
-            <label for="holding-ticker-input">מניה</label>
-            <input name="ticker" id="holding-ticker-input" placeholder="טיקר או שם מניה (למשל AAPL או טבע)" required maxlength="40" autocomplete="off" />
-            <ul id="ticker-suggestions" class="ticker-suggestions hidden"></ul>
-            <p id="ticker-resolved" class="hint hidden"></p>
-          </div>
-
-          <div class="field-row">
-            <div class="field">
-              <label for="holding-shares-input">כמות מניות</label>
-              <input name="shares" id="holding-shares-input" type="number" step="any" min="0" placeholder="0" required />
-            </div>
-            <div class="field">
-              <label for="holding-price-input">מחיר קנייה למניה</label>
-              <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="0.00" required />
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="purchase-date-input">תאריך קנייה</label>
-            <input name="purchase_date" type="date" id="purchase-date-input" />
-          </div>
-          <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
-
-          <div id="date-helper" class="date-helper hidden">
-            <p class="hint">
-              הזן את השנה בקירוב אם אתה זוכר אותה — זה גם מדייק את התוצאות וגם מהיר משמעותית מחיפוש על פני 10 שנים.
-            </p>
-            <div class="date-helper-row">
-              <input type="number" id="date-helper-year" placeholder="שנה (אופציונלי, למשל 2023)" min="1980" />
-              <button type="button" id="find-date-search">חפש תאריכים</button>
-            </div>
-            <ul id="date-helper-results" class="date-chip-list"></ul>
-          </div>
-
-          <p id="holding-error" class="form-error hidden"></p>
-          <button type="submit" id="holding-submit-btn">הוסף מניה</button>
-          <button type="button" id="holding-cancel-edit" class="link-btn hidden">בטל עריכה</button>
-        </form>
       </section>
+    </div>
+
+    <div id="add-holding-page" class="reports-page hidden">
+      <div class="reports-page-header">
+        <button type="button" id="add-holding-back-btn" class="reports-back-btn" aria-label="חזרה">›</button>
+        <h1 id="add-holding-title">הוספת מניה</h1>
+      </div>
+
+      <form id="holding-form" class="stock-form panel">
+        <input type="hidden" name="id" id="holding-edit-id" />
+        <input type="hidden" name="market" id="holding-market-input" value="US" />
+        <input type="hidden" name="company_name" id="holding-company-name-input" value="" />
+
+        <div class="field ticker-search-wrap">
+          <label for="holding-ticker-input">מניה</label>
+          <input name="ticker" id="holding-ticker-input" placeholder="טיקר או שם מניה (למשל AAPL או טבע)" required maxlength="40" autocomplete="off" />
+          <ul id="ticker-suggestions" class="ticker-suggestions hidden"></ul>
+          <p id="ticker-resolved" class="hint hidden"></p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="holding-shares-input">כמות מניות</label>
+            <input name="shares" id="holding-shares-input" type="number" step="any" min="0" placeholder="0" required />
+          </div>
+          <div class="field">
+            <label for="holding-price-input">מחיר קנייה למניה</label>
+            <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="purchase-date-input">תאריך קנייה</label>
+          <input name="purchase_date" type="date" id="purchase-date-input" />
+        </div>
+        <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
+
+        <div id="date-helper" class="date-helper hidden">
+          <p class="hint">
+            הזן את השנה בקירוב אם אתה זוכר אותה — זה גם מדייק את התוצאות וגם מהיר משמעותית מחיפוש על פני 10 שנים.
+          </p>
+          <div class="date-helper-row">
+            <input type="number" id="date-helper-year" placeholder="שנה (אופציונלי, למשל 2023)" min="1980" />
+            <button type="button" id="find-date-search">חפש תאריכים</button>
+          </div>
+          <ul id="date-helper-results" class="date-chip-list"></ul>
+        </div>
+
+        <p id="holding-error" class="form-error hidden"></p>
+        <button type="submit" id="holding-submit-btn">הוסף מניה</button>
+        <button type="button" id="holding-cancel-edit" class="link-btn hidden">בטל עריכה</button>
+      </form>
     </div>
 
     <div id="reports-page" class="reports-page hidden">

@@ -1010,9 +1010,7 @@ main {
 /* ---------- Add/edit stock form ---------- */
 
 .stock-form {
-  margin-top: 0.5rem;
-  padding-top: 1.1rem;
-  border-top: 1px solid var(--border);
+  margin-top: 0;
 }
 
 .field {

@@ -760,7 +760,28 @@ function closeReportsPage() {
 
 document.getElementById('open-reports-btn').addEventListener('click', openReportsPage);
 document.getElementById('reports-back-btn').addEventListener('click', () => history.back());
-window.addEventListener('popstate', closeReportsPage);
+
+// ---- Add/edit holding page navigation ----
+
+function openAddHoldingPage() {
+  document.getElementById('home-page').classList.add('hidden');
+  document.getElementById('add-holding-page').classList.remove('hidden');
+  window.scrollTo(0, 0);
+  history.pushState({ page: 'add-holding' }, '');
+}
+
+function closeAddHoldingPage() {
+  document.getElementById('add-holding-page').classList.add('hidden');
+  document.getElementById('home-page').classList.remove('hidden');
+  window.scrollTo(0, 0);
+}
+
+document.getElementById('add-holding-back-btn').addEventListener('click', () => history.back());
+
+window.addEventListener('popstate', () => {
+  closeReportsPage();
+  closeAddHoldingPage();
+});
 
 function showError(elementId, err) {
   const el = document.getElementById(elementId);
@@ -920,6 +941,7 @@ holdingForm.addEventListener('submit', async (e) => {
       await api('/api/holdings', { method: 'POST', body: JSON.stringify(payload) });
     }
     exitEditMode();
+    history.back();
     await refreshAll();
     // Dividend sync runs in the background on the server for speed, so give
     // it a moment and refresh again to pick up the newly-fetched history.
@@ -929,7 +951,10 @@ holdingForm.addEventListener('submit', async (e) => {
   }
 });
 
-holdingCancelEditBtn.addEventListener('click', exitEditMode);
+holdingCancelEditBtn.addEventListener('click', () => {
+  exitEditMode();
+  history.back();
+});
 
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.edit-btn');
@@ -951,7 +976,8 @@ document.addEventListener('click', (e) => {
   holdingForm.purchase_date.value = lot.purchase_date ?? '';
   holdingSubmitBtn.textContent = 'עדכן רכישה';
   holdingCancelEditBtn.classList.remove('hidden');
-  holdingForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('add-holding-title').textContent = 'עריכת רכישה';
+  openAddHoldingPage();
 });
 
 document.addEventListener('click', (e) => {
@@ -970,8 +996,15 @@ document.addEventListener('click', (e) => {
   const label = holding.market === 'IL' && holding.company_name ? holding.company_name : holding.ticker.replace('.TA', '');
   resolvedText.textContent = `מוסיף רכישה נוספת עבור ${label}`;
   resolvedText.classList.remove('hidden');
-  holdingForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('add-holding-title').textContent = 'הוספת מניה';
+  openAddHoldingPage();
   document.getElementById('holding-shares-input').focus();
+});
+
+document.getElementById('open-add-holding-btn').addEventListener('click', () => {
+  exitEditMode();
+  document.getElementById('add-holding-title').textContent = 'הוספת מניה';
+  openAddHoldingPage();
 });
 
 // ---- "Don't remember the purchase date? search by price" helper ----
