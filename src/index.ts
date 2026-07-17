@@ -973,6 +973,25 @@ app.get('/api/history/:ticker', async (c) => {
   return c.json({ ticker, matches });
 });
 
+const PRICE_HISTORY_RANGES = new Set(['1mo', '6mo', '1y', '5y', 'max']);
+
+app.get('/api/price-history/:ticker', async (c) => {
+  const ticker = c.req.param('ticker');
+  const rangeParam = c.req.query('range') ?? '1y';
+  const range = PRICE_HISTORY_RANGES.has(rangeParam) ? rangeParam : '1y';
+
+  const result = await fetchYahooChart(ticker, { range });
+  if (!result) return c.json({ points: [] });
+
+  const timestamps: number[] = result.timestamp ?? [];
+  const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+  const points = timestamps
+    .map((ts, i) => (closes[i] == null ? null : { date: new Date(ts * 1000).toISOString().slice(0, 10), price: closes[i]! }))
+    .filter((p): p is { date: string; price: number } => p !== null);
+
+  return c.json({ points });
+});
+
 // ---------- Portfolio summary ----------
 
 app.get('/api/summary', async (c) => {

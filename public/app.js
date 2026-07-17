@@ -290,6 +290,26 @@ function buildHoldingDetail(holding) {
   const lots = holding.lots ?? [];
   const hasMultipleLots = lots.length > 1;
 
+  const priceChartSection = `
+    <div class="panel price-chart-panel">
+      <div class="price-chart-head">
+        <h3>מחיר המניה</h3>
+        <div class="trend-range-tabs price-range-tabs" id="holding-price-range-tabs">
+          <button type="button" class="growth-tab" data-range="1mo">חודש</button>
+          <button type="button" class="growth-tab" data-range="6mo">6 חודשים</button>
+          <button type="button" class="growth-tab active" data-range="1y">שנה</button>
+          <button type="button" class="growth-tab" data-range="5y">5 שנים</button>
+          <button type="button" class="growth-tab" data-range="max">הכל</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <svg id="holding-price-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+        <div id="holding-price-tooltip" class="chart-tooltip hidden"></div>
+        <p id="holding-price-empty" class="empty hidden">אין נתוני מחיר זמינים</p>
+      </div>
+    </div>
+  `;
+
   const purchaseInfo = `
     <div class="purchase-info">
       <div class="purchase-stat">
@@ -337,7 +357,7 @@ function buildHoldingDetail(holding) {
     </div>
   `;
 
-  wrap.innerHTML = purchaseInfo + lotsSection;
+  wrap.innerHTML = priceChartSection + purchaseInfo + lotsSection;
   return wrap;
 }
 
@@ -802,6 +822,117 @@ document.addEventListener('click', (e) => {
   const id = row.dataset.holdingId;
   expandedHoldingId = expandedHoldingId === id ? null : id;
   renderHoldings(lastHoldings);
+  if (expandedHoldingId) {
+    const holding = lastHoldings.find((h) => String(h.id) === String(expandedHoldingId));
+    if (holding) initPriceChart(holding.ticker);
+  }
+});
+
+// ---- Per-stock price chart (shown when a holding is expanded) ----
+
+let priceChartState = null;
+let priceChartTicker = null;
+let priceChartRange = '1y';
+const priceChartCache = new Map();
+
+function initPriceChart(ticker) {
+  priceChartRange = '1y';
+  priceChartTicker = ticker;
+  attachChartHover('holding-price-chart-svg', 'holding-price-tooltip', () => priceChartState, (i, state) => ({
+    title: fmtDate(state.series[i].date),
+    value: fmtMoney(state.isIL ? state.series[i].price / 100 : state.series[i].price, state.isIL ? 'ILS' : 'USD'),
+  }));
+  loadPriceChart(ticker);
+}
+
+async function loadPriceChart(ticker) {
+  const cacheKey = `${ticker}|${priceChartRange}`;
+  let points = priceChartCache.get(cacheKey);
+  if (!points) {
+    try {
+      const data = await api(`/api/price-history/${encodeURIComponent(ticker)}?range=${priceChartRange}`);
+      points = data.points ?? [];
+      priceChartCache.set(cacheKey, points);
+    } catch {
+      points = [];
+    }
+  }
+  // The user may have collapsed this holding or switched to another one
+  // while the fetch was in flight — don't render a stale response.
+  if (priceChartTicker !== ticker) return;
+  renderPriceChart(points, ticker);
+}
+
+function renderPriceChart(points, ticker) {
+  const svg = document.getElementById('holding-price-chart-svg');
+  const emptyEl = document.getElementById('holding-price-empty');
+  if (!svg) return;
+
+  if (points.length === 0) {
+    svg.innerHTML = '';
+    priceChartState = null;
+    emptyEl?.classList.remove('hidden');
+    return;
+  }
+  emptyEl?.classList.add('hidden');
+
+  const isIL = ticker.endsWith('.TA');
+  const plotLeft = 34, plotRight = 312, plotTop = 12, plotBottom = 122;
+  const prices = points.map((p) => p.price);
+  const max = Math.max(...prices);
+  const min = Math.min(...prices);
+  const span = max - min || 1;
+  const stepX = points.length > 1 ? (plotRight - plotLeft) / (points.length - 1) : 0;
+  const chartPoints = points.map((p, i) => ({
+    x: plotLeft + i * stepX,
+    y: plotBottom - ((p.price - min) / span) * (plotBottom - plotTop),
+  }));
+
+  const isUp = points[points.length - 1].price >= points[0].price;
+  const color = isUp ? '#00d68f' : '#ef4444';
+
+  const linePath = chartPoints.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${chartPoints[chartPoints.length - 1].x.toFixed(1)},${plotBottom} L${chartPoints[0].x.toFixed(1)},${plotBottom} Z`;
+  const lastPoint = chartPoints[chartPoints.length - 1];
+
+  const priceLabel = (v) => fmtMoney(isIL ? v / 100 : v, isIL ? 'ILS' : 'USD');
+  const yLevels = [{ frac: 1, value: max }, { frac: 0.5, value: (max + min) / 2 }, { frac: 0, value: min }];
+  const yAxis = yLevels.map(({ frac, value }) => {
+    const y = plotBottom - frac * (plotBottom - plotTop);
+    return `
+      <line x1="${plotLeft}" y1="${y.toFixed(1)}" x2="${plotRight}" y2="${y.toFixed(1)}" stroke="#232a35" stroke-width="1" />
+      <text x="${(plotLeft - 6).toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="#8b93a1" font-size="8.5">${priceLabel(value)}</text>
+    `;
+  }).join('');
+
+  const xAxis = pickLabelIndices(points.length, 4)
+    .map((i) => `<text x="${chartPoints[i].x.toFixed(1)}" y="${plotBottom + 16}" text-anchor="middle" fill="#8b93a1" font-size="8.5">${fmtDate(points[i].date)}</text>`)
+    .join('');
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="priceAreaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${color}" stop-opacity="0.35" />
+        <stop offset="1" stop-color="${color}" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+    ${yAxis}
+    <path d="${areaPath}" fill="url(#priceAreaGrad)" />
+    <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="4.5" fill="${color}" stroke="#06070a" stroke-width="2" />
+    ${xAxis}
+  `;
+
+  priceChartState = { points: chartPoints, series: points, plotTop, plotBottom, isIL };
+}
+
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('#holding-price-range-tabs .growth-tab');
+  if (!tab) return;
+  priceChartRange = tab.dataset.range;
+  document.querySelectorAll('#holding-price-range-tabs .growth-tab').forEach((t) => t.classList.remove('active'));
+  tab.classList.add('active');
+  loadPriceChart(priceChartTicker);
 });
 
 // ---- Holding add / edit ----
