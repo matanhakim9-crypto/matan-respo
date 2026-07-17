@@ -1026,6 +1026,14 @@ app.get('/api/summary', async (c) => {
     dividendIncomeByTicker.set(p.ticker, (dividendIncomeByTicker.get(p.ticker) ?? 0) + amount);
   }
 
+  // Quotes are independent per ticker, so fetch them all concurrently
+  // instead of one at a time — with a large portfolio, awaiting each quote
+  // in sequence (most of which are real Yahoo round-trips on a cache miss)
+  // made this endpoint take tens of seconds instead of about one.
+  const tickers = [...lotsByTicker.keys()];
+  const prices = await Promise.all(tickers.map((ticker) => getQuote(c.env, ticker)));
+  const priceByTicker = new Map(tickers.map((ticker, i) => [ticker, prices[i]]));
+
   let totalInvested = 0;
   let currentValue = 0;
   const holdingsWithPrice = [];
@@ -1043,7 +1051,7 @@ app.get('/api/summary', async (c) => {
 
     const currency = currencyForTicker(ticker);
     const toILS = toILSFactor(currency, fxRate);
-    const price = await getQuote(c.env, ticker);
+    const price = priceByTicker.get(ticker) ?? null;
     const nativeValue = (price ?? 0) * shares;
 
     currentValue += nativeValue * toILS;
