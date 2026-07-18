@@ -1173,6 +1173,7 @@ app.get('/api/dividends/stats', async (c) => {
   const thisYear = String(new Date().getFullYear());
   const lastYear = String(new Date().getFullYear() - 1);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
   let totalAllTime = 0;
   let totalIL = 0;
   let totalUS = 0;
@@ -1203,7 +1204,20 @@ app.get('/api/dividends/stats', async (c) => {
     }
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // A currently-held stock with no paid dividends yet (never synced, or
+  // genuinely hasn't paid since it was bought) should still show up in the
+  // per-stock breakdown at ₪0 rather than being silently missing from it.
+  for (const [ticker, info] of tickerInfo) {
+    if (byTicker.has(ticker)) continue;
+    byTicker.set(ticker, {
+      ticker,
+      market: info.market,
+      company_name: info.company_name,
+      total: 0,
+      earliestPaymentDate: firstPurchaseDate.get(ticker) ?? todayStr,
+    });
+  }
+
   const MIN_YEARS_SPAN = 30 / 365.25; // avoid absurd extrapolation from a single recent payment
   const topPayers = [...byTicker.values()]
     .map((t) => {
