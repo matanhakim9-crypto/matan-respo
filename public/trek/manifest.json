@@ -1,0 +1,19 @@
+{
+  "name": "מתכנן הטרקים",
+  "short_name": "מתכנן טרקים",
+  "description": "עונה על כמה שאלות ומציע מסלולי טרק רב-יומיים מתאימים, עם חלוקה יומית וקישורים לטיסות ומלונות",
+  "start_url": "/trek/",
+  "scope": "/trek/",
+  "display": "standalone",
+  "background_color": "#1B2B2F",
+  "theme_color": "#1B2B2F",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "he",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

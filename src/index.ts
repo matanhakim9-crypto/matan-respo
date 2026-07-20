@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { trekRoutes } from './trek';
 
 type Bindings = {
   DB: D1Database;
@@ -160,7 +161,7 @@ app.get('/api/auth/me', async (c) => {
 // session — each handler reads the authenticated user id via c.get('userId')
 // to scope its queries instead of trusting a client-supplied id.
 app.use('/api/*', async (c, next) => {
-  if (c.req.path.startsWith('/api/auth/')) return next();
+  if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/trek/')) return next();
   const token = getCookie(c, SESSION_COOKIE);
   const user = await getUserFromSession(c.env, token);
   if (!user) return c.json({ error: 'התחברות נדרשת' }, 401);
@@ -1230,5 +1231,9 @@ app.get('/api/dividends/stats', async (c) => {
 
   return c.json({ totalAllTime, totalIL, totalUS, totalThisYear, totalLastYear, topPayers });
 });
+
+// ---------- Trek planner (separate feature, no login required) ----------
+
+app.route('/api/trek', trekRoutes);
 
 export default app;
