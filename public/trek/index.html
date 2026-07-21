@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#1B2B2F" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="מתכנן הטרקים" />
+  <link rel="manifest" href="/trek/manifest.json" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <title>מתכנן הטרקים</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/trek/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar" id="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 20L9 8L12.5 14.5L15 10L21 20H3Z" stroke="#E8A33D" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <span>מתכנן הטרקים</span>
+    </div>
+    <div class="waypoints" id="waypoints"></div>
+  </div>
+
+  <!-- SCREEN 1: QUESTIONS -->
+  <div class="screen active" id="screen-questions">
+    <div class="content" id="q-content"></div>
+    <div class="bottom-nav">
+      <button class="btn btn-ghost" id="btnBack" style="display:none">חזרה</button>
+      <button class="btn btn-primary" id="btnNext" disabled>המשך</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: LOADING -->
+  <div class="screen" id="screen-loading">
+    <div class="content loading-content">
+      <div class="spinner"></div>
+      <p class="loading-text">מחפש מסלולים שמתאימים לך…</p>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: RESULTS -->
+  <div class="screen" id="screen-results">
+    <div class="content">
+      <div class="results-head">
+        <div class="q-eyebrow">התאמות לפי מה שסיפרת</div>
+        <h2>מצאתי כמה אופציות</h2>
+        <p id="results-sub"></p>
+      </div>
+      <div id="results-list"></div>
+      <div class="data-note" id="results-note"></div>
+    </div>
+    <div class="bottom-nav">
+      <button class="btn btn-ghost" id="btnRestart">שאלות מחדש</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: DETAIL -->
+  <div class="screen" id="screen-detail">
+    <div class="content" id="detail-content" style="padding-top:0;padding-bottom:40px;"></div>
+  </div>
+
+</div>
+
+<script src="/trek/app.js"></script>
+</body>
+</html>
