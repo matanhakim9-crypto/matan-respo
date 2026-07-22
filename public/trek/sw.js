@@ -1,9 +1,9 @@
-const CACHE_NAME = 'dividend-tracker-v2';
+const CACHE_NAME = 'trek-planner-v1';
 const APP_SHELL = [
-  '/',
-  '/style.css',
-  '/app.js',
-  '/manifest.json',
+  '/trek/',
+  '/trek/style.css',
+  '/trek/app.js',
+  '/trek/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
 ];
@@ -26,12 +26,11 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Never cache API calls: portfolio/dividend data must always be fresh.
+  // Never cache API calls: trek suggestions should always be fresh.
   if (url.pathname.startsWith('/api/')) return;
 
   // Network-first: always serve the latest deployed app when online, so a
   // redeploy shows up immediately instead of waiting for a second reload.
-  // The cache is only a fallback for when the network is unavailable.
   event.respondWith(
     fetch(request)
       .then((response) => {

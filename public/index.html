@@ -2,8 +2,8 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#16a34a" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#06070a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -16,79 +16,252 @@
 </head>
 <body>
   <header class="app-header">
+    <svg class="app-header-logo" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <linearGradient id="logo-coin-grad" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#00b377" />
+          <stop offset="1" stop-color="#4ef2b0" />
+        </linearGradient>
+      </defs>
+      <circle cx="38" cy="58" r="34" fill="#171b23" stroke="rgba(255,255,255,0.16)" stroke-width="5" />
+      <circle cx="63" cy="41" r="34" fill="url(#logo-coin-grad)" stroke="rgba(255,255,255,0.25)" stroke-width="5" />
+    </svg>
     <h1>Dividend Tracker</h1>
+    <span id="header-username" class="header-username hidden"></span>
+    <button type="button" id="logout-btn" class="logout-btn hidden">התנתקות</button>
   </header>
 
-  <main>
-    <section class="summary-grid" id="summary-grid" aria-live="polite">
-      <div class="card">
-        <span class="card-label">סה"כ הושקע</span>
-        <span class="card-value" id="s-invested">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">שווי נוכחי</span>
-        <span class="card-value" id="s-current">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">רווח/הפסד</span>
-        <span class="card-value" id="s-gain">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">תשואת דיבידנד שנתית</span>
-        <span class="card-value" id="s-yield">–</span>
-      </div>
-      <div class="card">
-        <span class="card-label">הכנסה חודשית ממוצעת</span>
-        <span class="card-value" id="s-monthly">–</span>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>מניות בתיק</h2>
-      <div class="table-wrap">
-        <table id="holdings-table">
-          <thead>
-            <tr>
-              <th>טיקר</th>
-              <th>מניות</th>
-              <th>הושקע</th>
-              <th>מחיר נוכחי</th>
-              <th>שווי</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="holdings-body"></tbody>
-        </table>
-      </div>
-
-      <form id="holding-form" class="inline-form">
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="10" />
-        <input name="shares" type="number" step="any" min="0" placeholder="כמות מניות" required />
-        <input name="amount_invested" type="number" step="any" min="0" placeholder="סכום שהושקע (₪/$)" required />
-        <input name="purchase_date" type="date" />
-        <button type="submit">הוסף מניה</button>
+  <div id="auth-page" class="auth-page hidden">
+    <div class="auth-brand">
+      <svg class="auth-brand-logo" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="auth-logo-grad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stop-color="#00b377" />
+            <stop offset="1" stop-color="#4ef2b0" />
+          </linearGradient>
+        </defs>
+        <circle cx="38" cy="58" r="34" fill="#171b23" stroke="rgba(255,255,255,0.16)" stroke-width="5" />
+        <circle cx="63" cy="41" r="34" fill="url(#auth-logo-grad)" stroke="rgba(255,255,255,0.25)" stroke-width="5" />
+      </svg>
+      <h1>Dividend Tracker</h1>
+      <p>מעקב אחרי תיק ההשקעות והדיבידנדים שלך, במקום אחד</p>
+    </div>
+    <div class="auth-card">
+      <h2 id="auth-title">התחברות</h2>
+      <p class="hint" id="auth-subtitle">התחבר כדי לראות את תיק ההשקעות שלך.</p>
+      <form id="auth-form">
+        <div class="field">
+          <label for="auth-username">שם משתמש</label>
+          <input id="auth-username" name="username" autocomplete="username" required maxlength="40" />
+        </div>
+        <div class="field">
+          <label for="auth-password">סיסמה</label>
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="6" />
+        </div>
+        <p id="auth-error" class="form-error hidden"></p>
+        <button type="submit" id="auth-submit-btn">התחברות</button>
       </form>
-    </section>
+      <button type="button" id="auth-toggle-btn" class="link-btn">אין לך חשבון? הרשמה כאן</button>
+    </div>
+  </div>
 
-    <section class="panel">
-      <h2>תשלומי דיבידנד צפויים</h2>
-      <ul id="upcoming-list" class="payment-list"></ul>
+  <main id="app-main" class="hidden">
+    <div id="home-page">
+      <section class="hero-summary" aria-live="polite">
+        <span class="hero-label">שווי תיק כולל</span>
+        <span class="hero-value" id="s-current">–</span>
+        <span class="hero-gain" id="s-gain">–</span>
 
-      <h3>כל התשלומים</h3>
-      <ul id="all-payments-list" class="payment-list"></ul>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <span class="hero-stat-label">הושקע</span>
+            <span class="hero-stat-value" id="s-invested">–</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-label">תשואת דיב' שנתית</span>
+            <span class="hero-stat-value" id="s-yield">–</span>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-label">הכנסה חודשית</span>
+            <span class="hero-stat-value" id="s-monthly">–</span>
+          </div>
+        </div>
+      </section>
 
-      <form id="dividend-form" class="inline-form">
-        <input name="ticker" placeholder="טיקר (AAPL)" required maxlength="10" />
-        <input name="amount_per_share" type="number" step="any" min="0" placeholder="סכום למניה" required />
-        <input name="shares_at_payment" type="number" step="any" min="0" placeholder="כמות מניות בתשלום" />
-        <input name="payment_date" type="date" required />
-        <select name="status">
-          <option value="expected">צפוי</option>
-          <option value="paid">שולם</option>
-        </select>
-        <button type="submit">הוסף תשלום</button>
+      <button type="button" id="open-reports-btn" class="reports-entry-card">
+        <span class="reports-entry-icon">📊</span>
+        <span class="reports-entry-text">
+          <span class="reports-entry-title">דוח הכנסות מדיבידנד</span>
+          <span class="reports-entry-sub" id="reports-entry-teaser">סה"כ שהתקבל, לפי מניה, ולפי תקופה</span>
+        </span>
+        <span class="expand-arrow">›</span>
+      </button>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>מניות בתיק</h2>
+          <button type="button" id="sync-dividends-btn">רענן דיבידנדים</button>
+        </div>
+        <p class="hint">לחיצה על מניה מציגה את פרטי הרכישות שלה. דיבידנדים נשלפים אוטומטית בכל הוספה/עדכון, ואפשר לראות את היסטוריית התשלומים בדוח הכנסות הדיבידנד.</p>
+        <p id="sync-status" class="hint"></p>
+
+        <button type="button" id="open-add-holding-btn" class="reports-entry-card">
+          <span class="reports-entry-icon">➕</span>
+          <span class="reports-entry-text">
+            <span class="reports-entry-title">הוספת מניה</span>
+            <span class="reports-entry-sub">הזנת רכישה חדשה לתיק</span>
+          </span>
+          <span class="expand-arrow">›</span>
+        </button>
+
+        <div class="holdings-search">
+          <input type="text" id="holdings-search-input" placeholder="חיפוש מניה לפי שם או טיקר…" autocomplete="off" />
+        </div>
+
+        <div class="holdings-list" id="holdings-body"></div>
+      </section>
+    </div>
+
+    <div id="add-holding-page" class="reports-page hidden">
+      <div class="reports-page-header">
+        <button type="button" id="add-holding-back-btn" class="reports-back-btn" aria-label="חזרה">›</button>
+        <h1 id="add-holding-title">הוספת מניה</h1>
+      </div>
+
+      <form id="holding-form" class="stock-form panel">
+        <input type="hidden" name="id" id="holding-edit-id" />
+        <input type="hidden" name="market" id="holding-market-input" value="US" />
+        <input type="hidden" name="company_name" id="holding-company-name-input" value="" />
+
+        <div class="field ticker-search-wrap">
+          <label for="holding-ticker-input">מניה</label>
+          <input name="ticker" id="holding-ticker-input" placeholder="טיקר או שם מניה (למשל AAPL או טבע)" required maxlength="40" autocomplete="off" />
+          <ul id="ticker-suggestions" class="ticker-suggestions hidden"></ul>
+          <p id="ticker-resolved" class="hint hidden"></p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="holding-shares-input">כמות מניות</label>
+            <input name="shares" id="holding-shares-input" type="number" step="any" min="0" placeholder="0" required />
+          </div>
+          <div class="field">
+            <label for="holding-price-input">מחיר קנייה למניה</label>
+            <input name="purchase_price" id="holding-price-input" type="number" step="any" min="0" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="purchase-date-input">תאריך קנייה</label>
+          <input name="purchase_date" type="date" id="purchase-date-input" />
+        </div>
+        <button type="button" id="find-date-toggle" class="link-btn">לא זוכר תאריך? חפש לפי מחיר</button>
+
+        <div id="date-helper" class="date-helper hidden">
+          <p class="hint">
+            הזן את השנה בקירוב אם אתה זוכר אותה — זה גם מדייק את התוצאות וגם מהיר משמעותית מחיפוש על פני 10 שנים.
+          </p>
+          <div class="date-helper-row">
+            <input type="number" id="date-helper-year" placeholder="שנה (אופציונלי, למשל 2023)" min="1980" />
+            <button type="button" id="find-date-search">חפש תאריכים</button>
+          </div>
+          <ul id="date-helper-results" class="date-chip-list"></ul>
+        </div>
+
+        <p id="holding-error" class="form-error hidden"></p>
+        <button type="submit" id="holding-submit-btn">הוסף מניה</button>
+        <button type="button" id="holding-cancel-edit" class="link-btn hidden">בטל עריכה</button>
       </form>
-    </section>
+    </div>
+
+    <div id="reports-page" class="reports-page hidden">
+      <div class="reports-page-header">
+        <button type="button" id="reports-back-btn" class="reports-back-btn" aria-label="חזרה">›</button>
+        <h1>דוח הכנסות מדיבידנד</h1>
+      </div>
+
+      <section class="reports-hero">
+        <span class="hero-label">סה"כ דיבידנד שהתקבל</span>
+        <span class="hero-value" id="r-total">–</span>
+      </section>
+
+      <div class="reports-stats-row">
+        <div class="growth-stat">
+          <span class="growth-stat-label">השנה</span>
+          <span class="growth-stat-value" id="r-this-year">–</span>
+        </div>
+        <div class="growth-stat">
+          <span class="growth-stat-label">שנה שעברה</span>
+          <span class="growth-stat-value" id="r-last-year">–</span>
+        </div>
+      </div>
+
+      <div class="reports-stats-row">
+        <div class="growth-stat">
+          <span class="growth-stat-label">מניות ישראליות 🇮🇱</span>
+          <span class="growth-stat-value" id="r-il">–</span>
+        </div>
+        <div class="growth-stat">
+          <span class="growth-stat-label">מניות אמריקאיות 🇺🇸</span>
+          <span class="growth-stat-value" id="r-us">–</span>
+        </div>
+      </div>
+
+      <button type="button" id="charts-toggle-btn" class="group-header charts-toggle-btn">
+        <span class="group-title">📈 גרפים וסטטיסטיקה</span>
+        <span class="expand-arrow group-arrow" id="charts-toggle-arrow">›</span>
+      </button>
+      <div id="charts-section" class="charts-section hidden">
+        <section class="panel">
+          <h2>מגמת הכנסה מדיבידנד</h2>
+          <div class="trend-range-tabs" id="trend-range-tabs">
+            <button type="button" class="growth-tab" data-range="3">3 חודשים</button>
+            <button type="button" class="growth-tab" data-range="6">חצי שנה</button>
+            <button type="button" class="growth-tab active" data-range="12">שנה</button>
+            <button type="button" class="growth-tab" data-range="24">שנתיים</button>
+            <button type="button" class="growth-tab" data-range="all">הכל</button>
+          </div>
+          <div class="trend-top">
+            <span class="trend-total" id="trend-total">–</span>
+            <span class="trend-delta" id="trend-delta"></span>
+          </div>
+          <div class="chart-wrap">
+            <svg id="trend-chart-svg" class="trend-chart" viewBox="0 0 320 172" preserveAspectRatio="none"></svg>
+            <div id="trend-tooltip" class="chart-tooltip hidden"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>התפלגות לפי שוק</h2>
+          <p class="hint">מאז הכניסה לכל המניות</p>
+          <div class="donut-wrap">
+            <svg id="market-donut-svg" width="130" height="130" viewBox="0 0 130 130"></svg>
+            <div class="donut-legend" id="market-legend"></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>לפי מניה</h2>
+        <p class="hint">סה"כ דיבידנד שהתקבל מכל מניה, מהגבוה לנמוך. לחיצה על מניה מציגה את היסטוריית התשלומים שלה.</p>
+        <div id="reports-top-payers" class="growth-list">
+          <p class="empty">טוען…</p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>קצב גדילת הכנסת דיבידנד</h2>
+        <p class="hint">הכנסה מדיבידנד בפועל בכל תקופה (רק ממניות שכבר החזקת בהן באותו זמן).</p>
+        <div class="growth-tabs">
+          <button type="button" class="growth-tab active" data-range="monthly">לפי חודש</button>
+          <button type="button" class="growth-tab" data-range="yearly">לפי שנה</button>
+        </div>
+        <div id="growth-summary" class="growth-summary"></div>
+        <div id="growth-chart" class="growth-list">
+          <p class="empty">טוען…</p>
+        </div>
+      </section>
+    </div>
   </main>
 
   <script src="/app.js"></script>
