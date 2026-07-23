@@ -1,11 +1,11 @@
-const CACHE_NAME = 'trek-planner-v1';
+const CACHE_NAME = 'trek-planner-v2';
 const APP_SHELL = [
   '/trek/',
   '/trek/style.css',
   '/trek/app.js',
   '/trek/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/trek/icons/icon-192.png',
+  '/trek/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
