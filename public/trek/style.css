@@ -106,6 +106,12 @@ h1,h2,h3,.display{font-family:'Bricolage Grotesque',sans-serif;letter-spacing:-0
 .btn-primary:disabled{opacity:0.35;pointer-events:none;box-shadow:none;}
 .btn-ghost{background:var(--surface);color:var(--ink-dim);border:1px solid var(--line-strong);flex:0 0 auto;padding:15px 20px;}
 
+.mock-toggle{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;
+  font-size:12.5px;color:var(--ink-dim);cursor:pointer;user-select:none;
+}
+.mock-toggle input{width:16px;height:16px;accent-color:var(--green);flex-shrink:0;}
+
 /* ---------- loading screen ---------- */
 .loading-content{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding-bottom:0;}
 .spinner{width:44px;height:44px;border-radius:50%;border:3px solid var(--line-strong);border-top-color:var(--green);animation:spin 0.9s linear infinite;}

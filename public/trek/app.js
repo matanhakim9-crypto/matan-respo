@@ -194,11 +194,13 @@ function elevationSVG(stages, w = 400, h = 108, strokeColor = '#204B2C', fillOpa
 
 async function fetchResults() {
   showScreen('screen-loading');
+  const mockToggle = document.getElementById('mockToggle');
   const payload = {
     regions: answers.region || ['any'],
     days: answers.days,
     difficulty: answers.difficulty,
     lodging: answers.lodging || [],
+    mock: !!(mockToggle && mockToggle.checked),
   };
   try {
     const res = await fetch('/api/trek/plan', {
