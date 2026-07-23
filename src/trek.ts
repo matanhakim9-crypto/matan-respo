@@ -33,6 +33,7 @@ type Trek = {
   matchScore: number;
   stages: { elevs: number[] }[];
   dayPlan: DayPlanEntry[];
+  photos?: string[];
 };
 
 export const trekRoutes = new Hono<{ Bindings: Bindings }>();
@@ -52,6 +53,70 @@ async function getAnthropicApiKey(env: Bindings): Promise<string | null> {
     cachedAnthropicKey = null;
   }
   return cachedAnthropicKey;
+}
+
+// Real trek photos, pulled from Wikipedia/Wikimedia — no API key needed, and it's
+// fetched server-side (once per trek, then cached) so results don't depend on the
+// visitor's browser being able to reach Wikipedia and don't slow down every render.
+const BAD_IMAGE_HINTS = ['icon', 'logo', 'symbol', 'flag', 'map', 'pictogram', 'commons-logo', 'edit-icon', 'wiki'];
+
+async function wikiSearchTitle(lang: string, query: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=1`
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    return data?.query?.search?.[0]?.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function wikiPageGallery(lang: string, title: string, limit: number): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}` +
+        `&generator=images&gimlimit=25&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as any;
+    const pages = Object.values(data?.query?.pages ?? {}) as any[];
+    return pages
+      .map((p) => p?.imageinfo?.[0])
+      .filter((info) => {
+        if (!info?.url) return false;
+        if (!/^image\/(jpeg|png)$/.test(info.mime || '')) return false;
+        if ((info.width || 0) < 500) return false;
+        const lower = String(info.url).toLowerCase();
+        return !BAD_IMAGE_HINTS.some((hint) => lower.includes(hint));
+      })
+      .sort((a, b) => (b.width || 0) - (a.width || 0))
+      .slice(0, limit)
+      .map((info) => info.url as string);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTrekGallery(name: string, country: string, limit = 6): Promise<string[]> {
+  for (const [lang, query] of [
+    ['he', name],
+    ['en', name],
+    ['en', country],
+  ] as const) {
+    const title = await wikiSearchTitle(lang, query);
+    if (!title) continue;
+    const photos = await wikiPageGallery(lang, title, limit);
+    if (photos.length) return photos;
+  }
+  return [];
+}
+
+async function enrichWithPhotos(treks: Trek[]): Promise<Trek[]> {
+  return Promise.all(
+    treks.map(async (t) => ({ ...t, photos: await fetchTrekGallery(t.name, t.country) }))
+  );
 }
 
 const REGION_LABELS: Record<string, string> = {
@@ -285,6 +350,17 @@ function fallbackTreks(req: { regions: string[]; days: DaysRange; difficulty: Tr
   return CURATED_TREKS.map((t) => ({ ...t, matchScore: scoreCuratedTrek(t, req) })).sort((a, b) => b.matchScore - a.matchScore);
 }
 
+async function writeCache(DB: D1Database, cacheKey: string, treks: Trek[]) {
+  try {
+    await DB.prepare(
+      `INSERT INTO trek_plan_cache (cache_key, response, created_at) VALUES (?, ?, ?)
+       ON CONFLICT(cache_key) DO UPDATE SET response = excluded.response, created_at = excluded.created_at`
+    ).bind(cacheKey, JSON.stringify(treks), new Date().toISOString()).run();
+  } catch {
+    // caching is best-effort; a failed write shouldn't fail the request
+  }
+}
+
 trekRoutes.post('/plan', async (c) => {
   const body = await c.req.json<TrekPlanRequest>().catch(() => ({}) as TrekPlanRequest);
   const regions = body.regions?.length ? body.regions : ['any'];
@@ -294,21 +370,20 @@ trekRoutes.post('/plan', async (c) => {
 
   const normalizedReq = { regions, days, difficulty, lodging };
 
-  // Same preferences within the cache window reuse the last live result instead of
-  // paying for a fresh Anthropic call + web searches — repeated/identical testing
-  // (or two people picking the same answers) shouldn't burn credits every time.
+  // Same preferences reuse the last result (treks and their photos don't go stale
+  // fast) instead of re-paying for a fresh Anthropic call + web searches + image
+  // lookups every time — this doubles as a growing "already searched" library.
   const cacheKey = JSON.stringify({
     regions: [...regions].sort(),
     days,
     difficulty,
     lodging: [...lodging].sort(),
   });
-  const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
   try {
-    const cached = await c.env.DB.prepare(`SELECT response, created_at FROM trek_plan_cache WHERE cache_key = ?`)
+    const cached = await c.env.DB.prepare(`SELECT response FROM trek_plan_cache WHERE cache_key = ?`)
       .bind(cacheKey)
-      .first<{ response: string; created_at: string }>();
-    if (cached && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
+      .first<{ response: string }>();
+    if (cached) {
       return c.json({ treks: JSON.parse(cached.response) as Trek[], usingFallback: false, usingCache: true });
     }
   } catch {
@@ -317,7 +392,9 @@ trekRoutes.post('/plan', async (c) => {
 
   const apiKey = await getAnthropicApiKey(c.env);
   if (!apiKey) {
-    return c.json({ treks: fallbackTreks(normalizedReq), usingFallback: true });
+    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    await writeCache(c.env.DB, cacheKey, treks);
+    return c.json({ treks, usingFallback: true });
   }
 
   try {
@@ -356,19 +433,15 @@ trekRoutes.post('/plan', async (c) => {
     const parsed = JSON.parse(textBlock.text) as { treks: Trek[] };
     if (!Array.isArray(parsed.treks) || parsed.treks.length === 0) throw new Error('empty treks array');
 
-    try {
-      await c.env.DB.prepare(
-        `INSERT INTO trek_plan_cache (cache_key, response, created_at) VALUES (?, ?, ?)
-         ON CONFLICT(cache_key) DO UPDATE SET response = excluded.response, created_at = excluded.created_at`
-      ).bind(cacheKey, JSON.stringify(parsed.treks), new Date().toISOString()).run();
-    } catch {
-      // caching is best-effort; a failed write shouldn't fail the request
-    }
+    const treks = await enrichWithPhotos(parsed.treks);
+    await writeCache(c.env.DB, cacheKey, treks);
 
-    return c.json({ treks: parsed.treks, usingFallback: false });
+    return c.json({ treks, usingFallback: false });
   } catch (err) {
+    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    await writeCache(c.env.DB, cacheKey, treks);
     return c.json({
-      treks: fallbackTreks(normalizedReq),
+      treks,
       usingFallback: true,
       error: err instanceof Error ? err.message : String(err),
     });
