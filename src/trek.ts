@@ -294,6 +294,27 @@ trekRoutes.post('/plan', async (c) => {
 
   const normalizedReq = { regions, days, difficulty, lodging };
 
+  // Same preferences within the cache window reuse the last live result instead of
+  // paying for a fresh Anthropic call + web searches — repeated/identical testing
+  // (or two people picking the same answers) shouldn't burn credits every time.
+  const cacheKey = JSON.stringify({
+    regions: [...regions].sort(),
+    days,
+    difficulty,
+    lodging: [...lodging].sort(),
+  });
+  const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+  try {
+    const cached = await c.env.DB.prepare(`SELECT response, created_at FROM trek_plan_cache WHERE cache_key = ?`)
+      .bind(cacheKey)
+      .first<{ response: string; created_at: string }>();
+    if (cached && Date.now() - new Date(cached.created_at).getTime() < CACHE_TTL_MS) {
+      return c.json({ treks: JSON.parse(cached.response) as Trek[], usingFallback: false, usingCache: true });
+    }
+  } catch {
+    // cache miss/read failure — fall through to a live lookup
+  }
+
   const apiKey = await getAnthropicApiKey(c.env);
   if (!apiKey) {
     return c.json({ treks: fallbackTreks(normalizedReq), usingFallback: true });
@@ -305,13 +326,13 @@ trekRoutes.post('/plan', async (c) => {
     const lodgingText = lodging.map((l) => LODGING_LABELS[l as TrekLodging] ?? l).join(', ');
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-sonnet-5',
       max_tokens: 8000,
       output_config: {
         effort: 'low',
         format: { type: 'json_schema', schema: TREK_SCHEMA },
       },
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 6 }],
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
       system:
         'אתה עוזר לגילוי מסלולי טרק בתוך אפליקציית תכנון טיולים. בהינתן ההעדפות של המשתמש, ' +
         'השתמש בכלי חיפוש האינטרנט כדי למצוא 5 מסלולי טרק רב-יומיים אמיתיים, קיימים בפועל ומתועדים היטב, שמתאימים להעדפות. ' +
@@ -334,6 +355,15 @@ trekRoutes.post('/plan', async (c) => {
     if (!textBlock || textBlock.type !== 'text') throw new Error('no text block in Anthropic response');
     const parsed = JSON.parse(textBlock.text) as { treks: Trek[] };
     if (!Array.isArray(parsed.treks) || parsed.treks.length === 0) throw new Error('empty treks array');
+
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO trek_plan_cache (cache_key, response, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(cache_key) DO UPDATE SET response = excluded.response, created_at = excluded.created_at`
+      ).bind(cacheKey, JSON.stringify(parsed.treks), new Date().toISOString()).run();
+    } catch {
+      // caching is best-effort; a failed write shouldn't fail the request
+    }
 
     return c.json({ treks: parsed.treks, usingFallback: false });
   } catch (err) {

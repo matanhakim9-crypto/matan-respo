@@ -76,3 +76,9 @@ CREATE TABLE IF NOT EXISTS dividend_pay_date_cache (
   pay_date TEXT NOT NULL,
   PRIMARY KEY (ticker, ex_date)
 );
+
+CREATE TABLE IF NOT EXISTS trek_plan_cache (
+  cache_key TEXT PRIMARY KEY,
+  response TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
