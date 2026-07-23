@@ -73,6 +73,20 @@ async function wikiSearchTitle(lang: string, query: string): Promise<string | nu
   }
 }
 
+function filterImageInfos(infos: any[], limit: number): string[] {
+  return infos
+    .filter((info) => {
+      if (!info?.url) return false;
+      if (!/^image\/(jpeg|png)$/.test(info.mime || '')) return false;
+      if ((info.width || 0) < 350) return false;
+      const lower = String(info.url).toLowerCase();
+      return !BAD_IMAGE_HINTS.some((hint) => lower.includes(hint));
+    })
+    .sort((a, b) => (b.width || 0) - (a.width || 0))
+    .slice(0, limit)
+    .map((info) => info.url as string);
+}
+
 async function wikiPageGallery(lang: string, title: string, limit: number): Promise<string[]> {
   try {
     const res = await fetch(
@@ -82,41 +96,71 @@ async function wikiPageGallery(lang: string, title: string, limit: number): Prom
     if (!res.ok) return [];
     const data = (await res.json()) as any;
     const pages = Object.values(data?.query?.pages ?? {}) as any[];
-    return pages
-      .map((p) => p?.imageinfo?.[0])
-      .filter((info) => {
-        if (!info?.url) return false;
-        if (!/^image\/(jpeg|png)$/.test(info.mime || '')) return false;
-        if ((info.width || 0) < 500) return false;
-        const lower = String(info.url).toLowerCase();
-        return !BAD_IMAGE_HINTS.some((hint) => lower.includes(hint));
-      })
-      .sort((a, b) => (b.width || 0) - (a.width || 0))
-      .slice(0, limit)
-      .map((info) => info.url as string);
+    return filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
   } catch {
     return [];
   }
 }
 
-async function fetchTrekGallery(name: string, country: string, limit = 6): Promise<string[]> {
+// Wikimedia Commons indexes many more standalone landscape/hiking photos than
+// any one Wikipedia article embeds, and its file search is far more forgiving
+// of a query that isn't an exact article title — a good broad fallback for
+// trek names that don't have their own Wikipedia page.
+async function commonsFileSearch(query: string, limit: number): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}` +
+        `&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as any;
+    const pages = Object.values(data?.query?.pages ?? {}) as any[];
+    return filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
+  } catch {
+    return [];
+  }
+}
+
+// Last-resort generic search term per region, in English (Commons/enwiki index
+// best in English) — guarantees a thematically-relevant photo even when a
+// trek's exact name and country both come up empty.
+const REGION_PHOTO_FALLBACK: Record<string, string> = {
+  israel: 'Negev desert hiking Israel',
+  europe: 'Alps mountains hiking trail',
+  asia: 'Himalaya mountains trekking',
+  'south-america': 'Andes mountains Patagonia',
+  africa: 'Atlas Mountains Morocco',
+  'north-america': 'Sierra Nevada mountains trail',
+};
+
+async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
   for (const [lang, query] of [
-    ['he', name],
-    ['en', name],
-    ['en', country],
+    ['he', t.name],
+    ['en', t.name],
   ] as const) {
     const title = await wikiSearchTitle(lang, query);
-    if (!title) continue;
-    const photos = await wikiPageGallery(lang, title, limit);
-    if (photos.length) return photos;
+    if (title) {
+      const photos = await wikiPageGallery(lang, title, limit);
+      if (photos.length) return photos;
+    }
   }
+  const byName = await commonsFileSearch(t.name, limit);
+  if (byName.length) return byName;
+
+  const byCountry = await commonsFileSearch(t.country, limit);
+  if (byCountry.length) return byCountry;
+
+  const fallbackQuery = REGION_PHOTO_FALLBACK[t.region];
+  if (fallbackQuery) {
+    const byRegion = await commonsFileSearch(fallbackQuery, limit);
+    if (byRegion.length) return byRegion;
+  }
+
   return [];
 }
 
 async function enrichWithPhotos(treks: Trek[]): Promise<Trek[]> {
-  return Promise.all(
-    treks.map(async (t) => ({ ...t, photos: await fetchTrekGallery(t.name, t.country) }))
-  );
+  return Promise.all(treks.map(async (t) => ({ ...t, photos: await fetchTrekGallery(t) })));
 }
 
 const REGION_LABELS: Record<string, string> = {
