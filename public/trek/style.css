@@ -23,11 +23,12 @@ body{min-height:100vh;display:flex;justify-content:center;background:var(--bg);}
 #app{
   width:100%;max-width:480px;min-height:100vh;display:flex;flex-direction:column;position:relative;
   background-color:var(--bg);
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%231B231D' stroke-opacity='0.045' stroke-width='1.1'%3E%3Cpath d='M-10 24 Q 25 6, 60 24 T 150 24'/%3E%3Cpath d='M-10 54 Q 25 36, 60 54 T 150 54'/%3E%3Cpath d='M-10 84 Q 25 66, 60 84 T 150 84'/%3E%3Cpath d='M-10 114 Q 25 96, 60 114 T 150 114'/%3E%3C/g%3E%3C/svg%3E");
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg fill='none' stroke='%232E6B3E' stroke-opacity='0.16' stroke-width='1.6'%3E%3Cellipse cx='110' cy='110' rx='30' ry='22' transform='rotate(-12 110 110)'/%3E%3Cellipse cx='110' cy='110' rx='58' ry='44' transform='rotate(-12 110 110)'/%3E%3Cellipse cx='110' cy='110' rx='88' ry='68' transform='rotate(-12 110 110)'/%3E%3Cellipse cx='110' cy='110' rx='120' ry='94' transform='rotate(-12 110 110)'/%3E%3C/g%3E%3C/svg%3E");
+  background-size:220px 220px;
   background-repeat:repeat;
 }
 
-h1,h2,h3,.display{font-family:'Rubik',sans-serif;letter-spacing:-0.01em;}
+h1,h2,h3,.display{font-family:'Suez One',serif;letter-spacing:-0.005em;}
 .mono{font-family:'Assistant',sans-serif;}
 
 ::selection{background:var(--green);color:#fff;}
@@ -36,7 +37,7 @@ h1,h2,h3,.display{font-family:'Rubik',sans-serif;letter-spacing:-0.01em;}
 .topbar{padding:20px 20px 12px;position:sticky;top:0;background:linear-gradient(var(--bg) 82%, transparent);z-index:5;}
 .brand{display:flex;align-items:center;gap:10px;margin-bottom:20px;}
 .brand svg{width:28px;height:28px;flex-shrink:0;}
-.brand span{font-family:'Rubik',sans-serif;font-weight:800;font-size:18px;letter-spacing:-0.01em;color:var(--ink);}
+.brand span{font-family:'Suez One',serif;font-size:18px;letter-spacing:-0.005em;color:var(--ink);}
 .waypoints{display:flex;align-items:center;gap:0;}
 .wp-dot{width:7px;height:7px;border-radius:50%;background:var(--line-strong);flex-shrink:0;transition:background .3s, transform .3s;}
 .wp-dot.done{background:var(--green);}
