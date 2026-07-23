@@ -24,6 +24,19 @@ body{min-height:100vh;display:flex;justify-content:center;background:var(--bg);}
   width:100%;max-width:480px;min-height:100vh;display:flex;flex-direction:column;position:relative;
   background:var(--bg);
 }
+#app::before{
+  content:"";position:absolute;inset:0;z-index:0;
+  background-image:var(--bg-photo, none);
+  background-size:cover;background-position:center;
+  filter:blur(22px) saturate(0.8) brightness(0.97);
+  opacity:0.4;
+  pointer-events:none;
+}
+#app::after{
+  content:"";position:absolute;inset:0;z-index:0;
+  background:linear-gradient(180deg, rgba(247,246,240,0.78) 0%, rgba(247,246,240,0.94) 100%);
+  pointer-events:none;
+}
 
 h1,h2,h3,.display{font-family:'Suez One',serif;letter-spacing:-0.005em;}
 .mono{font-family:'Assistant',sans-serif;}
@@ -42,7 +55,7 @@ h1,h2,h3,.display{font-family:'Suez One',serif;letter-spacing:-0.005em;}
 .wp-line{flex:1;height:1px;background:var(--line);margin:0 4px;position:relative;top:0;}
 
 /* ---------- screens ---------- */
-.screen{display:none;flex:1;flex-direction:column;}
+.screen{display:none;flex:1;flex-direction:column;position:relative;z-index:1;}
 .screen.active{display:flex;}
 .content{flex:1;padding:8px 20px 100px;}
 

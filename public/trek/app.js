@@ -343,7 +343,10 @@ async function loadPopularTreks() {
     if (featured) {
       const featuredEl = document.getElementById('homeFeatured');
       const cover = featured.photos && featured.photos[0];
-      if (cover) featuredEl.style.backgroundImage = `url('${cover}')`;
+      if (cover) {
+        featuredEl.style.backgroundImage = `url('${cover}')`;
+        document.getElementById('app').style.setProperty('--bg-photo', `url('${cover}')`);
+      }
       document.getElementById('homeFeaturedName').textContent = featured.name;
       document.getElementById('homeFeaturedLoc').textContent = featured.country;
       featuredEl.addEventListener('click', () => {
