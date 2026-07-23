@@ -192,6 +192,30 @@ function elevationSVG(stages, w = 400, h = 108, strokeColor = '#E8A33D', fillOpa
   </svg>`;
 }
 
+const photoCache = {};
+async function wikiPhoto(lang, query) {
+  try {
+    const searchRes = await fetch(
+      `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=1`
+    );
+    const searchData = await searchRes.json();
+    const title = searchData?.query?.search?.[0]?.title;
+    if (!title) return null;
+    const sumRes = await fetch(`https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+    const sumData = await sumRes.json();
+    return sumData?.originalimage?.source || sumData?.thumbnail?.source || null;
+  } catch {
+    return null;
+  }
+}
+async function fetchTrekPhoto(t) {
+  const key = t.name + '|' + t.country;
+  if (photoCache[key] !== undefined) return photoCache[key];
+  const url = (await wikiPhoto('he', t.name)) || (await wikiPhoto('en', t.name)) || (await wikiPhoto('en', t.country));
+  photoCache[key] = url;
+  return url;
+}
+
 async function fetchResults() {
   showScreen('screen-loading');
   const payload = {
@@ -207,22 +231,25 @@ async function fetchResults() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    showResults(data.treks || [], !!data.usingFallback);
+    await showResults(data.treks || [], !!data.usingFallback);
   } catch (err) {
-    showResults([], true);
+    await showResults([], true);
   }
 }
 
-function showResults(treks, usingFallback) {
+async function showResults(treks, usingFallback) {
   lastResults = [...treks].sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
   document.getElementById('results-sub').textContent =
     `${lastResults.length} טרקים לפי ${QUESTIONS.length} ההעדפות שסימנת — ממוינים לפי רמת התאמה.`;
 
+  await Promise.all(lastResults.map(async (t) => { t.photo = await fetchTrekPhoto(t); }));
+
   const list = document.getElementById('results-list');
   list.innerHTML = lastResults.map((t, i) => `
     <div class="trek-card ${i === 0 ? 'top-match' : ''}" data-id="${t.id}">
-      <div class="profile-wrap">
-        ${elevationSVG(t.stages)}
+      <div class="profile-wrap" style="${t.photo ? `background-image:url('${t.photo}')` : ''}">
+        ${t.photo ? '<div class="scrim"></div>' : ''}
+        ${elevationSVG(t.stages, 400, 132, t.photo ? '#F2EFE4' : '#E8A33D', t.photo ? 0.1 : 0.16)}
         <div class="match-badge">${t.matchScore ?? '–'}% התאמה</div>
         <div class="region-tag">${t.country}</div>
       </div>
@@ -269,7 +296,10 @@ function showDetail(id) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#A9B8B7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
         חזרה לתוצאות
       </div>
-      <div class="detail-profile">${elevationSVG(t.stages, 400, 150)}</div>
+      <div class="detail-profile" style="${t.photo ? `background-image:url('${t.photo}')` : ''}">
+        ${t.photo ? '<div class="scrim"></div>' : ''}
+        ${elevationSVG(t.stages, 400, 190, t.photo ? '#F2EFE4' : '#E8A33D', t.photo ? 0.1 : 0.16)}
+      </div>
       <h1 class="detail-title">${t.name}</h1>
       <p class="detail-loc">${t.country} · ${t.blurb}</p>
       <div class="detail-stats-row">
