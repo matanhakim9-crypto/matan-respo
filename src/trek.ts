@@ -78,7 +78,7 @@ let lastPhotoDebug: string[] = [];
 // fans out to many external calls per invocation — this budget makes that
 // degrade gracefully (some treks end up without a photo) instead of every
 // single fetch failing at once once the platform limit is hit.
-const SUBREQUEST_BUDGET = 35;
+const SUBREQUEST_BUDGET = 45;
 let subrequestsLeft = 0;
 
 function takeSubrequest(): boolean {
@@ -203,20 +203,26 @@ async function wikiArticlePhotos(lang: string, query: string, limit: number): Pr
   return wikiPageGallery(lang, title, limit);
 }
 
-// Only 2 branches, run concurrently: Wikipedia article images on the trek
-// name (2 requests), and a Commons file search on the name (1 request). A
-// growing library means many treks get enriched in one request, and each
-// branch costs real subrequest budget (see SUBREQUEST_BUDGET above) — kept
-// deliberately lean rather than firing 4-5 branches per trek.
+// Sequential, cheapest-and-most-reliable-first, so most treks resolve in a
+// single subrequest instead of always spending the full budget:
+// 1. Commons file search on the trek name (1 request) — in practice this is
+//    both the cheapest AND the most reliable branch: a Wikipedia article's
+//    embedded images are mostly navigation/UI icons (flags, edit pencils,
+//    category thumbs), not content photos, so that branch was coming back
+//    empty far more often than Commons even when it "succeeded" at finding
+//    a page.
+// 2. Wikipedia article images on the name (up to 2 requests), only if (1)
+//    found nothing.
+// 3. A generic region-themed Commons search (1 request), only as a last
+//    resort — this is what a fictional/local trek name with no real-world
+//    presence falls back to.
 async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
-  const attempts = await Promise.allSettled([
-    wikiArticlePhotos('he', t.name, limit),
-    commonsFileSearch(t.name, limit),
-  ]);
-  for (const result of attempts) {
-    if (result.status === 'fulfilled' && result.value.length) return result.value;
-  }
-  // Last resort, only if budget allows: a generic region-themed photo.
+  const byName = await commonsFileSearch(t.name, limit);
+  if (byName.length) return byName;
+
+  const byArticle = await wikiArticlePhotos('he', t.name, limit);
+  if (byArticle.length) return byArticle;
+
   const fallbackQuery = REGION_PHOTO_FALLBACK[t.region];
   return fallbackQuery ? commonsFileSearch(fallbackQuery, limit) : [];
 }
