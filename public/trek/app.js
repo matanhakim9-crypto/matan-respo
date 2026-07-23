@@ -3,20 +3,20 @@ function icon(path, extra) {
   return `<svg viewBox="0 0 24 24" fill="none">${path}</svg>`;
 }
 const ICONS = {
-  pin: icon('<path d="M12 21s7-7.9 7-12.5A7 7 0 0 0 5 8.5C5 13.1 12 21 12 21Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="8.5" r="2.3" stroke="currentColor" stroke-width="1.6"/>'),
-  mountains: icon('<path d="M2.5 18.5 8 9.5l3 4.5 2.3-3.4 8.2 7.9H2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M6.5 12.3 8 9.5l1.1 1.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'),
+  pin: icon('<path d="M12 21s7-7.9 7-12.5A7 7 0 0 0 5 8.5C5 13.1 12 21 12 21Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="8.5" r="2.3" stroke="currentColor" stroke-width="1.9"/>'),
+  mountains: icon('<path d="M2.5 18.5 8 9.5l3 4.5 2.3-3.4 8.2 7.9H2.5Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M6.5 12.3 8 9.5l1.1 1.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'),
   pagoda: icon('<path d="M12 3l3 3.4H9L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 9.4h14l-1.6 2.6H6.6L5 9.4Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 12v6.5M14.5 12v6.5M4 20.5h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
-  peak: icon('<path d="M2.5 19 10 5l3 5.5L15.5 8l6 11H2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
-  sun: icon('<circle cx="12" cy="9" r="3.3" stroke="currentColor" stroke-width="1.6"/><path d="M3 19.5c2-3 5.4-4.5 9-4.5s7 1.5 9 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
+  peak: icon('<path d="M2.5 19 10 5l3 5.5L15.5 8l6 11H2.5Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>'),
+  sun: icon('<circle cx="12" cy="9" r="3.3" stroke="currentColor" stroke-width="1.9"/><path d="M3 19.5c2-3 5.4-4.5 9-4.5s7 1.5 9 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'),
   pine: icon('<path d="M12 3l4 6h-2.4l3.4 5.4h-3.2L17 19H7l3.2-4.6H7l3.4-5.4H8L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 19v2.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'),
-  globe: icon('<circle cx="12" cy="12" r="8.3" stroke="currentColor" stroke-width="1.6"/><path d="M3.7 12h16.6M12 3.7c2.5 2.3 3.9 5.2 3.9 8.3s-1.4 6-3.9 8.3c-2.5-2.3-3.9-5.2-3.9-8.3S9.5 6 12 3.7Z" stroke="currentColor" stroke-width="1.4"/>'),
-  calendar: icon('<rect x="3.3" y="5" width="17.4" height="15.5" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M3.3 9.6h17.4M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
-  tent: icon('<path d="M3 19 11 5l1 2-6 12H3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 5l8 14h-6l-4.8-9.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 19l2.3-4.4L13.5 19" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>'),
-  cabin: icon('<path d="M3.5 11 12 4l8.5 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 9.6V20h13V9.6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 20v-5h4v5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
-  house: icon('<path d="M4 11 12 4.5 20 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 9.5V20h12V9.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="10" y="14" width="4" height="6" stroke="currentColor" stroke-width="1.5"/>'),
-  hotel: icon('<path d="M3 21V8l9-5 9 5v13" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 21v-6h6v6" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
+  globe: icon('<circle cx="12" cy="12" r="8.3" stroke="currentColor" stroke-width="1.9"/><path d="M3.7 12h16.6M12 3.7c2.5 2.3 3.9 5.2 3.9 8.3s-1.4 6-3.9 8.3c-2.5-2.3-3.9-5.2-3.9-8.3S9.5 6 12 3.7Z" stroke="currentColor" stroke-width="1.4"/>'),
+  calendar: icon('<rect x="3.3" y="5" width="17.4" height="15.5" rx="2.4" stroke="currentColor" stroke-width="1.9"/><path d="M3.3 9.6h17.4M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'),
+  tent: icon('<path d="M3 19 11 5l1 2-6 12H3Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M13 5l8 14h-6l-4.8-9.5" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9 19l2.3-4.4L13.5 19" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>'),
+  cabin: icon('<path d="M3.5 11 12 4l8.5 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 9.6V20h13V9.6" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M10 20v-5h4v5" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>'),
+  house: icon('<path d="M4 11 12 4.5 20 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 9.5V20h12V9.5" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><rect x="10" y="14" width="4" height="6" stroke="currentColor" stroke-width="1.5"/>'),
+  hotel: icon('<path d="M3 21V8l9-5 9 5v13" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9 21v-6h6v6" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>'),
   route: icon('<circle cx="5" cy="19" r="1.7" fill="currentColor"/><circle cx="19" cy="5" r="1.7" fill="currentColor"/><path d="M6.3 17.7 17.7 6.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="0.4 3"/>'),
-  trendUp: icon('<path d="M3 17 9 10l4 3 7-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 5h4v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'),
+  trendUp: icon('<path d="M3 17 9 10l4 3 7-9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 5h4v4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>'),
 };
 function statIcon(name) { return `<span class="stat-ic">${ICONS[name]}</span>`; }
 function diffIcon(level) {
@@ -295,11 +295,11 @@ function showDetail(id) {
 
       <div class="action-row">
         <a class="action-btn" href="${flightUrl}" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 16l20-8-8 20-2-8-8-2z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2 16l20-8-8 20-2-8-8-2z"/></svg>
           חיפוש טיסות
         </a>
         <a class="action-btn" href="${hotelUrl}" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21V8l9-5 9 5v13M9 21v-6h6v6"/></svg>
           מלונות בקצוות
         </a>
       </div>
