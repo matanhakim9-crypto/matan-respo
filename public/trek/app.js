@@ -337,6 +337,12 @@ async function loadPopularTreks() {
     });
     const data = await res.json();
     const treks = (data.treks || []).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0)).slice(0, 6);
+
+    const heroPhoto = treks.map((t) => t.photos && t.photos[0]).find(Boolean);
+    if (heroPhoto) {
+      document.getElementById('homeHero').style.backgroundImage = `url('${heroPhoto}')`;
+    }
+
     if (!treks.length) { strip.innerHTML = ''; return; }
     strip.innerHTML = treks.map((t) => {
       const cover = t.photos && t.photos[0];
