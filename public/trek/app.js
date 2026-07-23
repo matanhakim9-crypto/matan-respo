@@ -336,11 +336,21 @@ async function loadPopularTreks() {
       body: JSON.stringify({ regions: ['any'], days: 'medium', difficulty: 'moderate', lodging: [], mock: true }),
     });
     const data = await res.json();
-    const treks = (data.treks || []).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0)).slice(0, 6);
+    const all = (data.treks || []).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0)).slice(0, 6);
+    const featured = all.find((t) => t.photos && t.photos[0]) || all[0];
+    const treks = all.filter((t) => t !== featured);
 
-    const heroPhoto = treks.map((t) => t.photos && t.photos[0]).find(Boolean);
-    if (heroPhoto) {
-      document.getElementById('homeHero').style.backgroundImage = `url('${heroPhoto}')`;
+    if (featured) {
+      const featuredEl = document.getElementById('homeFeatured');
+      const cover = featured.photos && featured.photos[0];
+      if (cover) featuredEl.style.backgroundImage = `url('${cover}')`;
+      document.getElementById('homeFeaturedName').textContent = featured.name;
+      document.getElementById('homeFeaturedLoc').textContent = featured.country;
+      featuredEl.addEventListener('click', () => {
+        lastResults = all;
+        detailBackTarget = 'screen-home';
+        showDetail(featured.id);
+      });
     }
 
     if (!treks.length) { strip.innerHTML = ''; return; }
@@ -353,7 +363,7 @@ async function loadPopularTreks() {
     }).join('');
     strip.querySelectorAll('.popular-card').forEach((el) => {
       el.addEventListener('click', () => {
-        lastResults = treks;
+        lastResults = all;
         detailBackTarget = 'screen-home';
         showDetail(el.dataset.id);
       });

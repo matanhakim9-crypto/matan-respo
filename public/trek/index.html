@@ -29,17 +29,25 @@
 
   <!-- SCREEN 0: HOME -->
   <div class="screen active" id="screen-home">
-    <div class="content" id="home-content" style="padding-top:0;">
-      <div class="home-hero" id="homeHero">
-        <div class="scrim"></div>
-        <div class="home-logo">
+    <div class="content" id="home-content">
+      <div class="home-top">
+        <div class="home-brandmark">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.4" stroke="#2E6B3E" stroke-width="1.6"/><path d="M6.5 15 10.5 8.5 13 12.3 14.8 9.6 17.5 15Z" stroke="#2E6B3E" stroke-width="1.5" stroke-linejoin="round"/></svg>
         </div>
-        <h1>מתכנן הטרקים</h1>
-        <p>עונים על כמה שאלות קצרות, ומקבלים מסלולי טרק רב-יומיים אמיתיים שמתאימים בדיוק לכם — עם תמונות, חלוקה יומית וקישורים לטיסות ומלונות.</p>
+        <h1 class="home-title">לתכנן את הטרק הבא,<br/>בלי לפתוח גוגל</h1>
+        <p class="home-sub">עונים על כמה שאלות קצרות, ומקבלים מסלולי טרק רב-יומיים אמיתיים שמתאימים בדיוק לכם — עם תמונות, חלוקה יומית וקישורים לטיסות ומלונות.</p>
       </div>
 
-      <div class="section-label" style="margin-top:8px;">טרקים פופולריים</div>
+      <div class="home-featured" id="homeFeatured">
+        <div class="scrim"></div>
+        <div class="hf-badge">טרק מומלץ</div>
+        <div class="hf-text">
+          <b id="homeFeaturedName">טוען מסלול…</b>
+          <span id="homeFeaturedLoc"></span>
+        </div>
+      </div>
+
+      <div class="section-label">עוד טרקים פופולריים</div>
       <div class="popular-strip" id="popularStrip">
         <div class="popular-card popular-skeleton"></div>
         <div class="popular-card popular-skeleton"></div>
