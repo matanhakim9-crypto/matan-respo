@@ -28,13 +28,13 @@ body{min-height:100vh;display:flex;justify-content:center;background:var(--bg);}
   content:"";position:absolute;inset:0;z-index:0;
   background-image:var(--bg-photo, none);
   background-size:cover;background-position:center;
-  filter:blur(22px) saturate(0.8) brightness(0.97);
-  opacity:0.4;
+  filter:blur(20px) saturate(0.75) brightness(1.12);
+  opacity:0.65;
   pointer-events:none;
 }
 #app::after{
   content:"";position:absolute;inset:0;z-index:0;
-  background:linear-gradient(180deg, rgba(247,246,240,0.78) 0%, rgba(247,246,240,0.94) 100%);
+  background:rgba(247,246,240,0.5);
   pointer-events:none;
 }
 
