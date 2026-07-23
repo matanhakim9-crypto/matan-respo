@@ -133,29 +133,29 @@ const REGION_PHOTO_FALLBACK: Record<string, string> = {
   'north-america': 'Sierra Nevada mountains trail',
 };
 
+async function wikiArticlePhotos(lang: string, query: string, limit: number): Promise<string[]> {
+  const title = await wikiSearchTitle(lang, query);
+  if (!title) return [];
+  return wikiPageGallery(lang, title, limit);
+}
+
+// All fallback branches run concurrently (not one-after-another) — this was
+// the main thing making searches slow, since each branch is itself a couple
+// of sequential network round-trips. Priority order is applied when picking
+// the winner, not when scheduling the requests, so total wait time is bounded
+// by the single slowest branch instead of the sum of all of them.
 async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
-  for (const [lang, query] of [
-    ['he', t.name],
-    ['en', t.name],
-  ] as const) {
-    const title = await wikiSearchTitle(lang, query);
-    if (title) {
-      const photos = await wikiPageGallery(lang, title, limit);
-      if (photos.length) return photos;
-    }
-  }
-  const byName = await commonsFileSearch(t.name, limit);
-  if (byName.length) return byName;
-
-  const byCountry = await commonsFileSearch(t.country, limit);
-  if (byCountry.length) return byCountry;
-
   const fallbackQuery = REGION_PHOTO_FALLBACK[t.region];
-  if (fallbackQuery) {
-    const byRegion = await commonsFileSearch(fallbackQuery, limit);
-    if (byRegion.length) return byRegion;
+  const attempts = await Promise.allSettled([
+    wikiArticlePhotos('he', t.name, limit),
+    wikiArticlePhotos('en', t.name, limit),
+    commonsFileSearch(t.name, limit),
+    commonsFileSearch(t.country, limit),
+    fallbackQuery ? commonsFileSearch(fallbackQuery, limit) : Promise.resolve([]),
+  ]);
+  for (const result of attempts) {
+    if (result.status === 'fulfilled' && result.value.length) return result.value;
   }
-
   return [];
 }
 
@@ -447,13 +447,13 @@ trekRoutes.post('/plan', async (c) => {
     const lodgingText = lodging.map((l) => LODGING_LABELS[l as TrekLodging] ?? l).join(', ');
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-5',
-      max_tokens: 8000,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 6000,
       output_config: {
         effort: 'low',
         format: { type: 'json_schema', schema: TREK_SCHEMA },
       },
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 4 }],
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
       system:
         'אתה עוזר לגילוי מסלולי טרק בתוך אפליקציית תכנון טיולים. בהינתן ההעדפות של המשתמש, ' +
         'השתמש בכלי חיפוש האינטרנט כדי למצוא 5 מסלולי טרק רב-יומיים אמיתיים, קיימים בפועל ומתועדים היטב, שמתאימים להעדפות. ' +
