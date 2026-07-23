@@ -226,8 +226,7 @@ function showResults(treks, usingFallback) {
     return `
     <div class="trek-card ${i === 0 ? 'top-match' : ''}" data-id="${t.id}">
       <div class="profile-wrap" style="${cover ? `background-image:url('${cover}')` : ''}">
-        ${cover ? '<div class="scrim"></div>' : ''}
-        ${elevationSVG(t.stages, 400, 132, cover ? '#FFFFFF' : '#204B2C', cover ? 0.14 : 0.16)}
+        ${cover ? '<div class="scrim"></div>' : elevationSVG(t.stages, 400, 132, '#204B2C', 0.16)}
         <div class="match-badge">${t.matchScore ?? '–'}% התאמה</div>
         <div class="region-tag">${t.country}</div>
       </div>
@@ -278,8 +277,7 @@ function showDetail(id) {
         חזרה לתוצאות
       </div>
       <div class="detail-profile" style="${cover ? `background-image:url('${cover}')` : ''}">
-        ${cover ? '<div class="scrim"></div>' : ''}
-        ${elevationSVG(t.stages, 400, 190, cover ? '#FFFFFF' : '#204B2C', cover ? 0.14 : 0.16)}
+        ${cover ? '<div class="scrim"></div>' : elevationSVG(t.stages, 400, 190, '#204B2C', 0.16)}
       </div>
       ${photos.length > 1 ? `
         <div class="photo-strip">
