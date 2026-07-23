@@ -161,7 +161,9 @@ async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
 }
 
 async function enrichWithPhotos(treks: Trek[]): Promise<Trek[]> {
-  return Promise.all(treks.map(async (t) => ({ ...t, photos: await fetchTrekGallery(t) })));
+  return Promise.all(
+    treks.map(async (t) => (t.photos && t.photos.length ? t : { ...t, photos: await fetchTrekGallery(t) }))
+  );
 }
 
 const REGION_LABELS: Record<string, string> = {
@@ -391,8 +393,61 @@ function scoreCuratedTrek(trek: Trek, req: { regions: string[]; days: DaysRange;
   return Math.min(Math.round(score), 99);
 }
 
-function fallbackTreks(req: { regions: string[]; days: DaysRange; difficulty: TrekDifficulty; lodging: string[] }): Trek[] {
-  return CURATED_TREKS.map((t) => ({ ...t, matchScore: scoreCuratedTrek(t, req) })).sort((a, b) => b.matchScore - a.matchScore);
+// Every trek a live search actually finds gets saved here (deduped by the
+// model's own id, e.g. two different searches that both surface the Tour du
+// Mont Blanc converge on the same row) — this is the "don't just have 6 fixed
+// examples" library: it grows on its own, no manual curation needed.
+async function saveToLibrary(DB: D1Database, treks: Trek[]) {
+  try {
+    const now = new Date().toISOString();
+    await Promise.all(
+      treks.map((t) =>
+        DB.prepare(
+          `INSERT INTO trek_library (id, name, country, region, days, distance, gain, difficulty, lodging, blurb, stages, day_plan, photos, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name=excluded.name, country=excluded.country, region=excluded.region, days=excluded.days,
+             distance=excluded.distance, gain=excluded.gain, difficulty=excluded.difficulty, lodging=excluded.lodging,
+             blurb=excluded.blurb, stages=excluded.stages, day_plan=excluded.day_plan, photos=excluded.photos`
+        )
+          .bind(
+            t.id, t.name, t.country, t.region, t.days, t.distance, t.gain, t.difficulty,
+            JSON.stringify(t.lodging), t.blurb, JSON.stringify(t.stages), JSON.stringify(t.dayPlan),
+            JSON.stringify(t.photos || []), now
+          )
+          .run()
+      )
+    );
+  } catch {
+    // best-effort; a failed library write shouldn't fail the request
+  }
+}
+
+async function loadLibraryTreks(DB: D1Database): Promise<Trek[]> {
+  try {
+    const { results } = await DB.prepare(
+      `SELECT id, name, country, region, days, distance, gain, difficulty, lodging, blurb, stages, day_plan, photos FROM trek_library`
+    ).all<any>();
+    return (results || []).map((r) => ({
+      id: r.id, name: r.name, country: r.country, region: r.region,
+      days: r.days, distance: r.distance, gain: r.gain, difficulty: r.difficulty,
+      lodging: JSON.parse(r.lodging), blurb: r.blurb,
+      stages: JSON.parse(r.stages), dayPlan: JSON.parse(r.day_plan),
+      photos: r.photos ? JSON.parse(r.photos) : [],
+      matchScore: 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function fallbackTreks(
+  DB: D1Database,
+  req: { regions: string[]; days: DaysRange; difficulty: TrekDifficulty; lodging: string[] }
+): Promise<Trek[]> {
+  const library = await loadLibraryTreks(DB);
+  const pool = [...CURATED_TREKS, ...library];
+  return pool.map((t) => ({ ...t, matchScore: scoreCuratedTrek(t, req) })).sort((a, b) => b.matchScore - a.matchScore);
 }
 
 async function writeCache(DB: D1Database, cacheKey: string, treks: Trek[]) {
@@ -420,7 +475,7 @@ trekRoutes.post('/plan', async (c) => {
   // poison a real cached result). Free and instant — use this while iterating
   // on layout instead of triggering a live paid search every time.
   if (body.mock) {
-    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
     return c.json({ treks, usingFallback: true, usingMock: true });
   }
 
@@ -446,7 +501,7 @@ trekRoutes.post('/plan', async (c) => {
 
   const apiKey = await getAnthropicApiKey(c.env);
   if (!apiKey) {
-    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
     await writeCache(c.env.DB, cacheKey, treks);
     return c.json({ treks, usingFallback: true });
   }
@@ -489,10 +544,11 @@ trekRoutes.post('/plan', async (c) => {
 
     const treks = await enrichWithPhotos(parsed.treks);
     await writeCache(c.env.DB, cacheKey, treks);
+    await saveToLibrary(c.env.DB, treks);
 
     return c.json({ treks, usingFallback: false });
   } catch (err) {
-    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
     await writeCache(c.env.DB, cacheKey, treks);
     return c.json({
       treks,

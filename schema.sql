@@ -82,3 +82,20 @@ CREATE TABLE IF NOT EXISTS trek_plan_cache (
   response TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS trek_library (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  country TEXT NOT NULL,
+  region TEXT NOT NULL,
+  days INTEGER NOT NULL,
+  distance INTEGER NOT NULL,
+  gain INTEGER NOT NULL,
+  difficulty TEXT NOT NULL,
+  lodging TEXT NOT NULL,
+  blurb TEXT NOT NULL,
+  stages TEXT NOT NULL,
+  day_plan TEXT NOT NULL,
+  photos TEXT,
+  created_at TEXT NOT NULL
+);
