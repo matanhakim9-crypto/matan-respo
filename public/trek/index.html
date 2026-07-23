@@ -27,8 +27,38 @@
     <div class="waypoints" id="waypoints"></div>
   </div>
 
+  <!-- SCREEN 0: HOME -->
+  <div class="screen active" id="screen-home">
+    <div class="content" id="home-content" style="padding-top:0;">
+      <div class="home-hero">
+        <div class="home-logo">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.4" stroke="#2E6B3E" stroke-width="1.6"/><path d="M6.5 15 10.5 8.5 13 12.3 14.8 9.6 17.5 15Z" stroke="#2E6B3E" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>מתכנן הטרקים</h1>
+        <p>עונים על כמה שאלות קצרות, ומקבלים מסלולי טרק רב-יומיים אמיתיים שמתאימים בדיוק לכם — עם תמונות, חלוקה יומית וקישורים לטיסות ומלונות.</p>
+      </div>
+
+      <div class="section-label" style="margin-top:8px;">טרקים פופולריים</div>
+      <div class="popular-strip" id="popularStrip">
+        <div class="popular-card popular-skeleton"></div>
+        <div class="popular-card popular-skeleton"></div>
+        <div class="popular-card popular-skeleton"></div>
+      </div>
+
+      <div class="section-label">איך זה עובד</div>
+      <div class="how-steps">
+        <div class="how-step"><div class="how-num">1</div><div class="how-text"><b>מספרים מה בא לכם</b><span>אזור, ימים פנויים, רמת קושי וסוג לינה</span></div></div>
+        <div class="how-step"><div class="how-num">2</div><div class="how-text"><b>מקבלים 5 הצעות אמיתיות</b><span>מסלולים קיימים ומתועדים, לא סתם רעיונות</span></div></div>
+        <div class="how-step"><div class="how-num">3</div><div class="how-text"><b>בוחרים ומתכננים</b><span>חלוקה יומית, תמונות, וקישורים לטיסות ומלונות</span></div></div>
+      </div>
+    </div>
+    <div class="bottom-nav">
+      <button class="btn btn-primary" id="btnStart">בואו נתחיל</button>
+    </div>
+  </div>
+
   <!-- SCREEN 1: QUESTIONS -->
-  <div class="screen active" id="screen-questions">
+  <div class="screen" id="screen-questions">
     <div class="content" id="q-content"></div>
     <div class="bottom-nav" style="flex-direction:column;align-items:stretch;">
       <label class="mock-toggle">

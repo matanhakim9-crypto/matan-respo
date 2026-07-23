@@ -262,6 +262,8 @@ function showResults(treks, usingFallback) {
   showScreen('screen-results');
 }
 
+let detailBackTarget = 'screen-results';
+
 function showDetail(id) {
   const t = lastResults.find((x) => x.id === id);
   if (!t) return;
@@ -274,7 +276,7 @@ function showDetail(id) {
     <div class="detail-hero">
       <div class="back-row" id="backToResults">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#66716A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
-        חזרה לתוצאות
+        ${detailBackTarget === 'screen-home' ? 'חזרה' : 'חזרה לתוצאות'}
       </div>
       <div class="detail-profile" style="${cover ? `background-image:url('${cover}')` : ''}">
         ${cover ? '<div class="scrim"></div>' : elevationSVG(t.stages, 400, 190, '#204B2C', 0.16)}
@@ -321,11 +323,47 @@ function showDetail(id) {
       `).join('')}
     </div>
   `;
-  document.getElementById('backToResults').addEventListener('click', () => showScreen('screen-results'));
+  document.getElementById('backToResults').addEventListener('click', () => showScreen(detailBackTarget));
   showScreen('screen-detail');
 }
 
+async function loadPopularTreks() {
+  const strip = document.getElementById('popularStrip');
+  try {
+    const res = await fetch('/api/trek/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ regions: ['any'], days: 'medium', difficulty: 'moderate', lodging: [], mock: true }),
+    });
+    const data = await res.json();
+    const treks = (data.treks || []).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0)).slice(0, 6);
+    if (!treks.length) { strip.innerHTML = ''; return; }
+    strip.innerHTML = treks.map((t) => {
+      const cover = t.photos && t.photos[0];
+      return `<div class="popular-card" data-id="${t.id}" style="${cover ? `background-image:url('${cover}')` : ''}">
+        <div class="scrim"></div>
+        <div class="pc-text"><b>${t.name}</b><span>${t.country}</span></div>
+      </div>`;
+    }).join('');
+    strip.querySelectorAll('.popular-card').forEach((el) => {
+      el.addEventListener('click', () => {
+        lastResults = treks;
+        detailBackTarget = 'screen-home';
+        showDetail(el.dataset.id);
+      });
+    });
+  } catch {
+    strip.innerHTML = '';
+  }
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  detailBackTarget = 'screen-results';
+  showScreen('screen-questions');
+});
+
 renderQuestion();
+loadPopularTreks();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
