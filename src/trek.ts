@@ -61,15 +61,33 @@ async function getAnthropicApiKey(env: Bindings): Promise<string | null> {
 // visitor's browser being able to reach Wikipedia and don't slow down every render.
 const BAD_IMAGE_HINTS = ['icon', 'logo', 'symbol', 'flag', 'map', 'pictogram', 'commons-logo', 'edit-icon', 'wiki'];
 
+// Wikimedia's API etiquette policy requires a descriptive User-Agent and will
+// reject or heavily rate-limit anonymous requests (which is what a bare
+// Cloudflare Worker fetch() sends by default) — this was silently causing
+// every single photo lookup to fail, not just obscure trek names.
+const WIKI_HEADERS = {
+  'User-Agent': 'TrekPlanner/1.0 (https://dividend-tracker.vrw8dsgpfv.workers.dev/trek/; contact via app)',
+  Accept: 'application/json',
+};
+
+let lastPhotoDebug: string[] = [];
+
 async function wikiSearchTitle(lang: string, query: string): Promise<string | null> {
   try {
     const res = await fetch(
-      `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=1`
+      `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=1`,
+      { headers: WIKI_HEADERS }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      lastPhotoDebug.push(`search ${lang}:"${query}" -> HTTP ${res.status}`);
+      return null;
+    }
     const data = (await res.json()) as any;
-    return data?.query?.search?.[0]?.title ?? null;
-  } catch {
+    const title = data?.query?.search?.[0]?.title ?? null;
+    lastPhotoDebug.push(`search ${lang}:"${query}" -> ${title ? `title="${title}"` : 'no match'}`);
+    return title;
+  } catch (err) {
+    lastPhotoDebug.push(`search ${lang}:"${query}" -> error ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -92,13 +110,20 @@ async function wikiPageGallery(lang: string, title: string, limit: number): Prom
   try {
     const res = await fetch(
       `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}` +
-        `&generator=images&gimlimit=25&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`
+        `&generator=images&gimlimit=25&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`,
+      { headers: WIKI_HEADERS }
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      lastPhotoDebug.push(`gallery ${lang}:"${title}" -> HTTP ${res.status}`);
+      return [];
+    }
     const data = (await res.json()) as any;
     const pages = Object.values(data?.query?.pages ?? {}) as any[];
-    return filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
-  } catch {
+    const photos = filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
+    lastPhotoDebug.push(`gallery ${lang}:"${title}" -> ${pages.length} raw, ${photos.length} kept after filter`);
+    return photos;
+  } catch (err) {
+    lastPhotoDebug.push(`gallery ${lang}:"${title}" -> error ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }
@@ -111,13 +136,20 @@ async function commonsFileSearch(query: string, limit: number): Promise<string[]
   try {
     const res = await fetch(
       `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}` +
-        `&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`
+        `&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url|size|mime&format=json&origin=*`,
+      { headers: WIKI_HEADERS }
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      lastPhotoDebug.push(`commons:"${query}" -> HTTP ${res.status}`);
+      return [];
+    }
     const data = (await res.json()) as any;
     const pages = Object.values(data?.query?.pages ?? {}) as any[];
-    return filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
-  } catch {
+    const photos = filterImageInfos(pages.map((p) => p?.imageinfo?.[0]), limit);
+    lastPhotoDebug.push(`commons:"${query}" -> ${pages.length} raw, ${photos.length} kept after filter`);
+    return photos;
+  } catch (err) {
+    lastPhotoDebug.push(`commons:"${query}" -> error ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }
@@ -160,10 +192,22 @@ async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
   return [];
 }
 
-async function enrichWithPhotos(treks: Trek[]): Promise<Trek[]> {
-  return Promise.all(
+async function enrichWithPhotos(treks: Trek[], DB?: D1Database): Promise<Trek[]> {
+  lastPhotoDebug = [];
+  const result = await Promise.all(
     treks.map(async (t) => (t.photos && t.photos.length ? t : { ...t, photos: await fetchTrekGallery(t) }))
   );
+  if (DB && lastPhotoDebug.length) {
+    const info = `trek-photo-debug: ${lastPhotoDebug.join(' | ')}`;
+    try {
+      await DB.prepare(`INSERT INTO fmp_debug_log (info, created_at) VALUES (?, ?)`)
+        .bind(info.slice(0, 4000), new Date().toISOString())
+        .run();
+    } catch {
+      // logging is best-effort
+    }
+  }
+  return result;
 }
 
 const REGION_LABELS: Record<string, string> = {
@@ -475,7 +519,7 @@ trekRoutes.post('/plan', async (c) => {
   // poison a real cached result). Free and instant — use this while iterating
   // on layout instead of triggering a live paid search every time.
   if (body.mock) {
-    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq), c.env.DB);
     return c.json({ treks, usingFallback: true, usingMock: true });
   }
 
@@ -501,7 +545,7 @@ trekRoutes.post('/plan', async (c) => {
 
   const apiKey = await getAnthropicApiKey(c.env);
   if (!apiKey) {
-    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq), c.env.DB);
     await writeCache(c.env.DB, cacheKey, treks);
     return c.json({ treks, usingFallback: true });
   }
@@ -542,13 +586,13 @@ trekRoutes.post('/plan', async (c) => {
     const parsed = JSON.parse(textBlock.text) as { treks: Trek[] };
     if (!Array.isArray(parsed.treks) || parsed.treks.length === 0) throw new Error('empty treks array');
 
-    const treks = await enrichWithPhotos(parsed.treks);
+    const treks = await enrichWithPhotos(parsed.treks, c.env.DB);
     await writeCache(c.env.DB, cacheKey, treks);
     await saveToLibrary(c.env.DB, treks);
 
     return c.json({ treks, usingFallback: false });
   } catch (err) {
-    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq));
+    const treks = await enrichWithPhotos(await fallbackTreks(c.env.DB, normalizedReq), c.env.DB);
     await writeCache(c.env.DB, cacheKey, treks);
     return c.json({
       treks,
