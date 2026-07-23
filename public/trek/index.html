@@ -30,9 +30,15 @@
   <!-- SCREEN 1: QUESTIONS -->
   <div class="screen active" id="screen-questions">
     <div class="content" id="q-content"></div>
-    <div class="bottom-nav">
-      <button class="btn btn-ghost" id="btnBack" style="display:none">חזרה</button>
-      <button class="btn btn-primary" id="btnNext" disabled>המשך</button>
+    <div class="bottom-nav" style="flex-direction:column;align-items:stretch;">
+      <label class="mock-toggle">
+        <input type="checkbox" id="mockToggle" />
+        מצב תצוגה בלבד (בלי AI, חינם ומיידי — לבדיקת עיצוב)
+      </label>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-ghost" id="btnBack" style="display:none">חזרה</button>
+        <button class="btn btn-primary" id="btnNext" disabled>המשך</button>
+      </div>
     </div>
   </div>
 

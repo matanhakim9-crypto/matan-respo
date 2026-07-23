@@ -15,6 +15,7 @@ type TrekPlanRequest = {
   days?: DaysRange;
   difficulty?: TrekDifficulty;
   lodging?: string[];
+  mock?: boolean;
 };
 
 type DayPlanEntry = { title: string; dist: string; gain: string; lodge: TrekLodging; desc: string };
@@ -413,6 +414,15 @@ trekRoutes.post('/plan', async (c) => {
   const lodging = body.lodging?.length ? body.lodging : ['tent', 'refuge', 'guesthouse', 'hotel'];
 
   const normalizedReq = { regions, days, difficulty, lodging };
+
+  // UI/design testing mode: curated fallback treks only, never touches the
+  // Anthropic API and never reads/writes the cache (so it can't accidentally
+  // poison a real cached result). Free and instant — use this while iterating
+  // on layout instead of triggering a live paid search every time.
+  if (body.mock) {
+    const treks = await enrichWithPhotos(fallbackTreks(normalizedReq));
+    return c.json({ treks, usingFallback: true, usingMock: true });
+  }
 
   // Same preferences reuse the last result (treks and their photos don't go stale
   // fast) instead of re-paying for a fresh Anthropic call + web searches + image
