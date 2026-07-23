@@ -72,7 +72,26 @@ const WIKI_HEADERS = {
 
 let lastPhotoDebug: string[] = [];
 
+// Cloudflare Workers cap the number of outbound fetch() calls a single
+// request can make ("Too many subrequests by single Worker invocation").
+// With a growing trek library, enriching every result with a real photo
+// fans out to many external calls per invocation — this budget makes that
+// degrade gracefully (some treks end up without a photo) instead of every
+// single fetch failing at once once the platform limit is hit.
+const SUBREQUEST_BUDGET = 35;
+let subrequestsLeft = 0;
+
+function takeSubrequest(): boolean {
+  if (subrequestsLeft <= 0) return false;
+  subrequestsLeft--;
+  return true;
+}
+
 async function wikiSearchTitle(lang: string, query: string): Promise<string | null> {
+  if (!takeSubrequest()) {
+    lastPhotoDebug.push(`search ${lang}:"${query}" -> skipped (subrequest budget exhausted)`);
+    return null;
+  }
   try {
     const res = await fetch(
       `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=1`,
@@ -98,8 +117,12 @@ function filterImageInfos(infos: any[], limit: number): string[] {
       if (!info?.url) return false;
       if (!/^image\/(jpeg|png)$/.test(info.mime || '')) return false;
       if ((info.width || 0) < 350) return false;
-      const lower = String(info.url).toLowerCase();
-      return !BAD_IMAGE_HINTS.some((hint) => lower.includes(hint));
+      // Check the filename only, not the full URL — every Wikimedia-hosted
+      // image lives at upload.wikimedia.org, so matching against the full
+      // URL made "wiki" reject 100% of results, always. That bug, not
+      // coverage, was why "raw: 20, kept: 0" kept showing up in the log.
+      const filename = String(info.url).toLowerCase().split('/').pop() || '';
+      return !BAD_IMAGE_HINTS.some((hint) => filename.includes(hint));
     })
     .sort((a, b) => (b.width || 0) - (a.width || 0))
     .slice(0, limit)
@@ -107,6 +130,10 @@ function filterImageInfos(infos: any[], limit: number): string[] {
 }
 
 async function wikiPageGallery(lang: string, title: string, limit: number): Promise<string[]> {
+  if (!takeSubrequest()) {
+    lastPhotoDebug.push(`gallery ${lang}:"${title}" -> skipped (subrequest budget exhausted)`);
+    return [];
+  }
   try {
     const res = await fetch(
       `https://${lang}.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}` +
@@ -133,6 +160,10 @@ async function wikiPageGallery(lang: string, title: string, limit: number): Prom
 // of a query that isn't an exact article title — a good broad fallback for
 // trek names that don't have their own Wikipedia page.
 async function commonsFileSearch(query: string, limit: number): Promise<string[]> {
+  if (!takeSubrequest()) {
+    lastPhotoDebug.push(`commons:"${query}" -> skipped (subrequest budget exhausted)`);
+    return [];
+  }
   try {
     const res = await fetch(
       `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}` +
@@ -172,28 +203,27 @@ async function wikiArticlePhotos(lang: string, query: string, limit: number): Pr
   return wikiPageGallery(lang, title, limit);
 }
 
-// All fallback branches run concurrently (not one-after-another) — this was
-// the main thing making searches slow, since each branch is itself a couple
-// of sequential network round-trips. Priority order is applied when picking
-// the winner, not when scheduling the requests, so total wait time is bounded
-// by the single slowest branch instead of the sum of all of them.
+// Only 2 branches, run concurrently: Wikipedia article images on the trek
+// name (2 requests), and a Commons file search on the name (1 request). A
+// growing library means many treks get enriched in one request, and each
+// branch costs real subrequest budget (see SUBREQUEST_BUDGET above) — kept
+// deliberately lean rather than firing 4-5 branches per trek.
 async function fetchTrekGallery(t: Trek, limit = 6): Promise<string[]> {
-  const fallbackQuery = REGION_PHOTO_FALLBACK[t.region];
   const attempts = await Promise.allSettled([
     wikiArticlePhotos('he', t.name, limit),
-    wikiArticlePhotos('en', t.name, limit),
     commonsFileSearch(t.name, limit),
-    commonsFileSearch(t.country, limit),
-    fallbackQuery ? commonsFileSearch(fallbackQuery, limit) : Promise.resolve([]),
   ]);
   for (const result of attempts) {
     if (result.status === 'fulfilled' && result.value.length) return result.value;
   }
-  return [];
+  // Last resort, only if budget allows: a generic region-themed photo.
+  const fallbackQuery = REGION_PHOTO_FALLBACK[t.region];
+  return fallbackQuery ? commonsFileSearch(fallbackQuery, limit) : [];
 }
 
 async function enrichWithPhotos(treks: Trek[], DB?: D1Database): Promise<Trek[]> {
   lastPhotoDebug = [];
+  subrequestsLeft = SUBREQUEST_BUDGET;
   const result = await Promise.all(
     treks.map(async (t) => (t.photos && t.photos.length ? t : { ...t, photos: await fetchTrekGallery(t) }))
   );
