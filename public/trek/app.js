@@ -113,7 +113,7 @@ function renderQuestion() {
         return `<div class="opt ${isSel ? 'selected' : ''} ${o.cls || ''}" data-v="${o.v}">
           <div class="oi">${o.i}</div>
           <div class="ot">${o.t}${o.s ? `<small>${o.s}</small>` : ''}</div>
-          <div class="opt-check"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12l5 5L20 6" stroke="#1B2B2F" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="opt-check"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12l5 5L20 6" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         </div>`;
       }).join('')}
     </div>
@@ -172,7 +172,7 @@ function showScreen(id) {
   window.scrollTo(0, 0);
 }
 
-function elevationSVG(stages, w = 400, h = 108, strokeColor = '#E8A33D', fillOpacity = 0.16) {
+function elevationSVG(stages, w = 400, h = 108, strokeColor = '#204B2C', fillOpacity = 0.16) {
   const pts = [];
   (stages || []).forEach((s) => (s.elevs || []).forEach((e) => pts.push(e)));
   if (pts.length < 2) pts.push(0, 1);
@@ -225,7 +225,7 @@ function showResults(treks, usingFallback) {
     <div class="trek-card ${i === 0 ? 'top-match' : ''}" data-id="${t.id}">
       <div class="profile-wrap" style="${cover ? `background-image:url('${cover}')` : ''}">
         ${cover ? '<div class="scrim"></div>' : ''}
-        ${elevationSVG(t.stages, 400, 132, cover ? '#F2EFE4' : '#E8A33D', cover ? 0.1 : 0.16)}
+        ${elevationSVG(t.stages, 400, 132, cover ? '#FFFFFF' : '#204B2C', cover ? 0.14 : 0.16)}
         <div class="match-badge">${t.matchScore ?? '–'}% התאמה</div>
         <div class="region-tag">${t.country}</div>
       </div>
@@ -272,12 +272,12 @@ function showDetail(id) {
   c.innerHTML = `
     <div class="detail-hero">
       <div class="back-row" id="backToResults">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#A9B8B7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#66716A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"/></svg>
         חזרה לתוצאות
       </div>
       <div class="detail-profile" style="${cover ? `background-image:url('${cover}')` : ''}">
         ${cover ? '<div class="scrim"></div>' : ''}
-        ${elevationSVG(t.stages, 400, 190, cover ? '#F2EFE4' : '#E8A33D', cover ? 0.1 : 0.16)}
+        ${elevationSVG(t.stages, 400, 190, cover ? '#FFFFFF' : '#204B2C', cover ? 0.14 : 0.16)}
       </div>
       ${photos.length > 1 ? `
         <div class="photo-strip">
