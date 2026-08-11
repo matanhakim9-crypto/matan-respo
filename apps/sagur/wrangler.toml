@@ -1,0 +1,23 @@
+name = "sagur"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# The API and the customer-facing quote page (/q/:token) are rendered by the
+# Worker, so asset serving must never shadow them. The Worker's catch-all route
+# hands everything else back to the ASSETS binding.
+run_worker_first = true
+
+[vars]
+# Public origin used when building the shareable quote link. Override per env.
+APP_ORIGIN = ""
+# Monthly price in agorot, shown on the upgrade screen (4900 = ₪49).
+PRO_PRICE_AGOROT = "4900"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sagur-db"
+# Replace with the id printed by `wrangler d1 create sagur-db`.
+database_id = "00000000-0000-0000-0000-000000000000"

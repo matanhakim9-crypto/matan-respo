@@ -3,6 +3,9 @@
 מעקב אחרי מניות דיבידנד, תשלומים צפויים ותשואה שנתית. רץ כ-Cloudflare Worker
 (Hono + D1), עם פרונט־אנד סטטי שמותקן בטלפון כ-PWA.
 
+> ברפו הזה יש גם אפליקציה שנייה, עצמאית לגמרי: [`apps/sagur`](apps/sagur) —
+> סָגוּר, הצעות מחיר עם חתימה דיגיטלית לבעלי מקצוע. נפרסת בנפרד עם ה-D1 שלה.
+
 ## מבנה הפרויקט
 
 - `src/index.ts` — ה-Worker: API routes (`/api/holdings`, `/api/dividends`, `/api/quote/:ticker`, `/api/summary`) ו-DB queries מול D1.
