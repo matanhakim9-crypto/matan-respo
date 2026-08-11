@@ -83,6 +83,19 @@ async function bumpCatalogUsage(env: AppEnv['Bindings'], userId: number, items: 
   );
 }
 
+/** A percentage is clamped to 0–100; a fixed discount is agorot. */
+function parseDiscount(
+  body: Record<string, unknown>,
+  current: { discount_type: 'none' | 'percent' | 'amount'; discount_value: number }
+): { type: 'none' | 'percent' | 'amount'; value: number } {
+  const type = ['none', 'percent', 'amount'].includes(String(body.discount_type))
+    ? (body.discount_type as 'none' | 'percent' | 'amount')
+    : current.discount_type;
+  const raw = num(body.discount_value, current.discount_value);
+  if (type === 'none') return { type, value: 0 };
+  return { type, value: type === 'percent' ? clampNum(raw, 0, 100) : Math.max(0, Math.round(raw)) };
+}
+
 function decorate(quote: QuoteRow, now = new Date()) {
   return {
     ...quote,
@@ -151,11 +164,13 @@ quotes.post('/', async (c) => {
   const issueDate = isoDate(body.issue_date, toIsoDate(now));
   const items = parseItems(body.items);
 
+  const discount = parseDiscount(body, { discount_type: 'none', discount_value: 0 });
+
   const number = await reserveQuoteNumber(c.env, user.id);
   const result = await c.env.DB.prepare(
     `INSERT INTO quotes (user_id, customer_id, number, title, status, issue_date, valid_until, notes, terms,
                          discount_type, discount_value, vat_rate, public_token, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, 'none', 0, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       user.id,
@@ -166,6 +181,8 @@ quotes.post('/', async (c) => {
       optionalIsoDate(body.valid_until) ?? addDays(issueDate, business.validity_days),
       str(body.notes, 4000),
       str(body.terms, 4000, business.default_terms),
+      discount.type,
+      discount.value,
       clampNum(num(body.vat_rate, business.vat_rate), 0, 100),
       randomToken(),
       now.toISOString(),
@@ -217,12 +234,7 @@ quotes.put('/:id', async (c) => {
 
   const body = await jsonBody(c);
   const issueDate = isoDate(body.issue_date, quote.issue_date);
-  const discountType = ['none', 'percent', 'amount'].includes(String(body.discount_type))
-    ? (body.discount_type as 'none' | 'percent' | 'amount')
-    : quote.discount_type;
-  const rawDiscount = num(body.discount_value, quote.discount_value);
-  const discountValue =
-    discountType === 'percent' ? clampNum(rawDiscount, 0, 100) : Math.max(0, Math.round(rawDiscount));
+  const discount = parseDiscount(body, quote);
 
   await c.env.DB.prepare(
     `UPDATE quotes SET customer_id = ?, title = ?, issue_date = ?, valid_until = ?, notes = ?, terms = ?,
@@ -236,8 +248,8 @@ quotes.put('/:id', async (c) => {
       'valid_until' in body ? optionalIsoDate(body.valid_until) : quote.valid_until,
       str(body.notes, 4000, quote.notes),
       str(body.terms, 4000, quote.terms),
-      discountType,
-      discountValue,
+      discount.type,
+      discount.value,
       clampNum(num(body.vat_rate, quote.vat_rate), 0, 100),
       new Date().toISOString(),
       quote.id,
@@ -268,10 +280,14 @@ quotes.post('/:id/send', async (c) => {
   }
 
   const now = new Date().toISOString();
+  // Re-sharing the link to a customer who has not answered keeps the original
+  // send date; sending again after a decline starts the follow-up clock over.
+  const resharing = quote.status === 'sent' || quote.status === 'viewed';
   await c.env.DB.prepare(
-    "UPDATE quotes SET status = 'sent', sent_at = COALESCE(sent_at, ?), updated_at = ? WHERE id = ? AND user_id = ?"
+    `UPDATE quotes SET status = 'sent', sent_at = ?, decided_at = NULL, decline_reason = NULL, updated_at = ?
+      WHERE id = ? AND user_id = ?`
   )
-    .bind(now, now, quote.id, user.id)
+    .bind(resharing ? (quote.sent_at ?? now) : now, now, quote.id, user.id)
     .run();
   await logEvent(c.env, quote.id, 'sent');
 
